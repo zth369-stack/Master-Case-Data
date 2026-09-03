@@ -970,4 +970,166 @@ export interface CompleteForensicThesisDossier {
   }[];
 }
 
+// -------------------------------------------------------------
+// Brain AI Correctional Center & Data Verification Types
+// -------------------------------------------------------------
+export type BrainAiAnomalySeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+
+export type BrainAiCaseCategory =
+  | 'CORPORATE_FORGERY'
+  | 'IDENTITY_LINEAGE'
+  | 'JUDICIAL_PROBATE'
+  | 'BANKING_DIVERSION'
+  | 'PROXY_DECEPTION'
+  | 'CUSTOM_INGESTION';
+
+export interface BrainAiAnomalyIndicator {
+  field: string;
+  claimedValue: string;
+  verifiedAuthoritativeValue: string;
+  anomalyDescription: string;
+  forensicDetectionRule: string;
+}
+
+export interface BrainAiCorrectionVerdict {
+  caseId: string;
+  title: string;
+  category: BrainAiCaseCategory;
+  severity: BrainAiAnomalySeverity;
+  submittedSubject: string;
+  submittedDocumentOrClaim: string;
+  flaggedAnomalies: BrainAiAnomalyIndicator[];
+  statutoryBreaches: {
+    act: string;
+    section: string;
+    violationTitle: string;
+    legalSanction: string;
+  }[];
+  authoritativeGroundTruth: {
+    registry: string;
+    officialRecordNumber: string;
+    custodianAgency: string;
+    establishedFact: string;
+  }[];
+  aiAdjudicationVerdict:
+    | 'FORGERY_CONFIRMED_NULL_AND_VOID'
+    | 'UNAUTHORIZED_ALTERATION_EXPUNGED'
+    | 'BIOLOGICAL_FILIATION_VINDICATED'
+    | 'ASSET_DIVERSION_OVERRULED'
+    | 'NOMINEE_DECEPTION_UNMASKED'
+    | 'RECTIFIED_AND_CERTIFIED';
+  orderedCorrectiveActions: string[];
+  neuralConfidenceScore: number;
+  reasoningStepByStep: string[];
+  aiModelUsed: string;
+  sha256CertificateHash: string;
+  timestamp: string;
+}
+
+export interface BrainAiCorrectionRequest {
+  caseId?: string;
+  category?: BrainAiCaseCategory;
+  customText?: string;
+  suspectedDocumentTitle?: string;
+  subjectIdentifier?: string;
+  additionalContext?: string;
+}
+
+export type VerificationDimension =
+  | 'CIVIL_LINEAGE'
+  | 'CORPORATE_EQUITY'
+  | 'JUDICIAL_PROBATE'
+  | 'BIOMETRIC_DNA'
+  | 'FINANCIAL_AMLA'
+  | 'PROXY_IDENTIFIER';
+
+export interface DataVerificationRecord {
+  id: string;
+  dimension: VerificationDimension;
+  dimensionLabel: string;
+  targetSubject: string;
+  identifierType: string;
+  primaryIdentifier: string;
+  issuingAuthority: string;
+  statutoryAnchor: string;
+  officialReferenceNumber: string;
+  verificationStatus: 'AUTHENTIC_VERIFIED' | 'TAMPERED_COMPROMISED' | 'FABRICATED_FORGED' | 'PENDING_CROSSCHECK';
+  cryptographicSha256: string;
+  verificationLoci: {
+    parameter: string;
+    status: 'VERIFIED' | 'FAILED' | 'FLAGGED';
+    detail: string;
+  }[];
+  verifiedDate: string;
+  attestingOfficer: string;
+  officialRemarks: string;
+}
+
+export interface DataVerificationSystemOverview {
+  systemTitle: string;
+  statutoryFramework: string[];
+  totalRecordsIndexed: number;
+  authenticVerifiedCount: number;
+  compromisedCount: number;
+  systemIntegrityScore: number;
+  lastMasterAuditSync: string;
+  verificationDimensions: {
+    key: VerificationDimension;
+    title: string;
+    authority: string;
+    recordCount: number;
+    status: string;
+  }[];
+  verifiedRecords: DataVerificationRecord[];
+}
+
+// -------------------------------------------------------------
+// BRAIN AI AUTONOMOUS AUDIT & AUTO-CORRECTION TYPES
+// -------------------------------------------------------------
+export type AutoCorrectionDomain =
+  | 'CORPORATE_REGISTRY'
+  | 'CIVIL_LINEAGE'
+  | 'JUDICIAL_PROBATE'
+  | 'FINANCIAL_AMLA'
+  | 'FORENSIC_EVIDENCE'
+  | 'ASSET_LEDGER'
+  | 'PROXY_IDENTIFICATION'
+  | 'CRYPTOGRAPHIC_INTEGRITY';
+
+export interface BrainAiAutoCorrectedChange {
+  id: string; // e.g. "AUTOCORR-2026-001"
+  timestamp: string;
+  domain: AutoCorrectionDomain;
+  domainLabel: string;
+  targetEntityOrDoc: string;
+  fieldOrParameter: string;
+  preCorrectionState: string; // The adverse, anomalous, unverified, or fraudulent claim
+  postCorrectionState: string; // The authoritative rectified and verified value
+  statutoryAnchor: string; // e.g. "Companies Act 2016 Section 346 & 600"
+  custodianAuthority: string; // e.g. "Suruhanjaya Syarikat Malaysia (SSM)"
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM';
+  status: 'AUTO_RECTIFIED_AND_LOCKED' | 'GROUND_TRUTH_RESTORED';
+  sha256VerificationHash: string;
+  correctionRationale: string;
+  testedLoci: string[];
+}
+
+export interface BrainAiAutoAuditRunSummary {
+  auditRunId: string;
+  triggeredAt: string;
+  completedAt: string;
+  status: 'COMPLETED_SUCCESSFULLY' | 'SCANNING';
+  totalEntitiesChecked: number;
+  totalDocumentsScanned: number;
+  totalEvidenceArtifactsInspected: number;
+  totalAnomaliesDetected: number;
+  totalAutoCorrectionsApplied: number;
+  systemIntegrityPreAudit: number; // e.g. 71.5%
+  systemIntegrityPostAudit: number; // 100.0%
+  changesMade: BrainAiAutoCorrectedChange[];
+  auditOfficer: string;
+  masterSealSha256: string;
+}
+
+
 

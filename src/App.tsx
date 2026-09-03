@@ -32,6 +32,7 @@ import {
   Dna,
   Gavel,
   BookOpen,
+  Brain,
 } from 'lucide-react';
 import type {
   SanitizedConfigReport,
@@ -51,11 +52,12 @@ import { VeridianSwiftUboView } from './components/VeridianSwiftUboView';
 import { CrawlerScraperRetrievalView } from './components/CrawlerScraperRetrievalView';
 import { ProbateWillCourtDnaView } from './components/ProbateWillCourtDnaView';
 import { PowerOfAttorneyAndMasterDossierView } from './components/PowerOfAttorneyAndMasterDossierView';
+import { BrainAiCorrectionalCenterView } from './components/BrainAiCorrectionalCenterView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'poa_master_dossier' | 'probate_court_dna' | 'crawler_retrieval' | 'veridian_swift' | 'case_dispute' | 'media_ai' | 'mcp' | 'icij' | 'skills' | 'verify' | 'dossier' | 'account' | 'test' | 'config' | 'audit' | 'env_guide'
-  >('poa_master_dossier');
+    'brain_ai_correction' | 'poa_master_dossier' | 'probate_court_dna' | 'crawler_retrieval' | 'veridian_swift' | 'case_dispute' | 'media_ai' | 'mcp' | 'icij' | 'skills' | 'verify' | 'dossier' | 'account' | 'test' | 'config' | 'audit' | 'env_guide'
+  >('brain_ai_correction');
   const [selectedMediaTriggerId, setSelectedMediaTriggerId] = useState<string | undefined>(undefined);
   const [officerAccount, setOfficerAccount] = useState<OfficerAccount | null>(null);
   const [configReport, setConfigReport] = useState<SanitizedConfigReport | null>(null);
@@ -299,6 +301,21 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
         {/* Tab Navigation */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 border-t border-slate-800/80 pt-1 overflow-x-auto">
           <button
+            onClick={() => setActiveTab('brain_ai_correction')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
+              activeTab === 'brain_ai_correction'
+                ? 'border-indigo-500 text-indigo-300 bg-indigo-950/40 shadow-sm'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+            }`}
+          >
+            <Brain className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+            Brain AI Correctional &amp; Data Verification
+            <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-mono">
+              AI Engine
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('poa_master_dossier')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
               activeTab === 'poa_master_dossier'
@@ -531,6 +548,13 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
             legal decisions, ICIJ Offshore Leaks Reconcile API, and evidentiary document verification.
           </div>
         </div>
+
+        {/* TAB: BRAIN AI CORRECTIONAL CENTER & DATA VERIFICATION SYSTEM */}
+        {activeTab === 'brain_ai_correction' && (
+          <BrainAiCorrectionalCenterView
+            onNavigateToPoaDossier={() => setActiveTab('poa_master_dossier')}
+          />
+        )}
 
         {/* TAB: POWER OF ATTORNEY & MASTER FORENSIC DOSSIER */}
         {activeTab === 'poa_master_dossier' && (

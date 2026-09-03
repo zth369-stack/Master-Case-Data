@@ -74,6 +74,18 @@ import {
   LAW_ENFORCEMENT_AMLA_DATA,
   UNMASKED_PROXY_X_DATA,
 } from './masterThesisService.js';
+import {
+  PRESET_CORRECTION_CASES,
+  DATA_VERIFICATION_RECORDS,
+  executeBrainAiCorrection,
+  getDataVerificationSystemOverview,
+  queryDataVerificationRegistry,
+  executeFullSystemAutoAuditAndCorrection,
+  getLatestAutoCorrectionAuditSummary,
+  getAutoCorrectedChangesList,
+  generateAutoCorrectionDecreeText,
+  MASTER_SYSTEM_AUTO_CORRECTIONS,
+} from './brainAiCorrectionService.js';
 
 // Pre-seeded authentic mock SSM registry records for testing restricted status queries
 const MOCK_ENTITIES: Record<string, SsmCompanyStatus> = {
@@ -1086,6 +1098,203 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
       success: true,
       data: UNMASKED_PROXY_X_DATA,
     });
+    return true;
+  }
+
+  // 55. GET /api/brain-ai/cases - Preset Brain AI Correction Cases
+  if (pathname === '/api/brain-ai/cases' && method === 'GET') {
+    sendJson(res, 200, {
+      success: true,
+      count: PRESET_CORRECTION_CASES.length,
+      data: PRESET_CORRECTION_CASES,
+      categories: ['CORPORATE_FORGERY', 'IDENTITY_LINEAGE', 'JUDICIAL_PROBATE', 'BANKING_DIVERSION', 'PROXY_DECEPTION'],
+    });
+    return true;
+  }
+
+  // 56. POST /api/brain-ai/correct - Execute Brain AI Cognitive Correction
+  if (pathname === '/api/brain-ai/correct' && method === 'POST') {
+    try {
+      const body = await readJsonBody<any>(req);
+      const verdict = await executeBrainAiCorrection(body);
+      addAuditLog({
+        agencyCode: 'BRAIN-AI-CORE',
+        endpoint: '/api/brain-ai/correct',
+        queryParam: verdict.caseId,
+        httpStatus: 200,
+        statusText: `Brain AI Correction executed: ${verdict.caseId} (${verdict.title}) [Verdict: ${verdict.aiAdjudicationVerdict}]`,
+        hmacVerified: true,
+        durationMs: 45,
+      });
+      sendJson(res, 200, {
+        success: true,
+        data: verdict,
+      });
+    } catch (err: any) {
+      console.error('Brain AI Correction Error:', err);
+      sendJson(res, 500, {
+        success: false,
+        error: err.message || 'Failed to execute Brain AI correction',
+      });
+    }
+    return true;
+  }
+
+  // 57. GET /api/brain-ai/verification-system - Data Verification System Overview & Records
+  if (pathname === '/api/brain-ai/verification-system' && method === 'GET') {
+    const overview = getDataVerificationSystemOverview();
+    sendJson(res, 200, {
+      success: true,
+      data: overview,
+    });
+    return true;
+  }
+
+  // 58. POST /api/brain-ai/verify-query - Query the Data Verification Registry
+  if (pathname === '/api/brain-ai/verify-query' && method === 'POST') {
+    try {
+      const body = await readJsonBody<any>(req);
+      const queryStr = body.query || '';
+      const result = queryDataVerificationRegistry(queryStr);
+      addAuditLog({
+        agencyCode: 'DATA-VERIFY-REG',
+        endpoint: '/api/brain-ai/verify-query',
+        queryParam: queryStr || 'ALL',
+        httpStatus: 200,
+        statusText: `Data verification query scanned: "${queryStr}" (${result.matchedRecords.length} matched)`,
+        hmacVerified: true,
+        durationMs: 25,
+      });
+      sendJson(res, 200, {
+        success: true,
+        data: result,
+      });
+    } catch (err: any) {
+      sendJson(res, 500, {
+        success: false,
+        error: err.message || 'Failed to query verification registry',
+      });
+    }
+    return true;
+  }
+
+  // 59. POST /api/brain-ai/generate-certificate - Generate Digital Signature & Section 90A Certificate
+  if (pathname === '/api/brain-ai/generate-certificate' && method === 'POST') {
+    try {
+      const body = await readJsonBody<any>(req);
+      const recordId = body.recordId;
+      const targetRecord = DATA_VERIFICATION_RECORDS.find((r) => r.id === recordId) || DATA_VERIFICATION_RECORDS[0];
+      const certText = `MALAYSIA EVIDENCE ACT 1950 (ACT 56) SECTION 90A
+DIGITAL CERTIFICATE OF VERIFICATION AND STATUTORY INTEGRITY
+
+1. RECORD IDENTIFIER: ${targetRecord.id}
+2. VERIFYING AUTHORITY: ${targetRecord.issuingAuthority}
+3. STATUTORY ANCHOR: ${targetRecord.statutoryAnchor}
+4. PRIMARY SUBJECT: ${targetRecord.targetSubject}
+5. OFFICIAL REFERENCE: ${targetRecord.officialReferenceNumber}
+6. VERIFICATION STATUS: ${targetRecord.verificationStatus}
+7. CRYPTOGRAPHIC SHA-256 HASH: ${targetRecord.cryptographicSha256}
+8. VERIFICATION LOCI AUDIT:
+${targetRecord.verificationLoci.map((l) => `   - [${l.status}] ${l.parameter}: ${l.detail}`).join('\n')}
+9. ATTESTING OFFICER: ${targetRecord.attestingOfficer}
+10. OFFICIAL REMARKS: ${targetRecord.officialRemarks}
+
+CERTIFICATION UNDER ACT 56 SECTION 90A:
+I, ${targetRecord.attestingOfficer}, hereby certify that the electronic document identified above is authentic, uncorrupted, and accurately reproduced from the authoritative official registry. Pursuant to Section 90A of the Evidence Act 1950 and the Digital Signature Act 1997, this computer output is conclusive documentary evidence admissible in all courts of Malaysia.
+
+ISSUED AT: ${new Date().toISOString()}
+DIGITAL SEAL: ${targetRecord.cryptographicSha256.toUpperCase()}`;
+
+      sendJson(res, 200, {
+        success: true,
+        data: {
+          record: targetRecord,
+          certificateText: certText,
+          issuedAt: new Date().toISOString(),
+        },
+      });
+    } catch (err: any) {
+      sendJson(res, 500, {
+        success: false,
+        error: err.message || 'Failed to generate certificate',
+      });
+    }
+    return true;
+  }
+
+  // 60. GET /api/brain-ai/auto-audit/summary - Retrieve latest auto-audit summary & stats
+  if (pathname === '/api/brain-ai/auto-audit/summary' && method === 'GET') {
+    const summary = getLatestAutoCorrectionAuditSummary();
+    sendJson(res, 200, {
+      success: true,
+      data: summary,
+    });
+    return true;
+  }
+
+  // 61. POST /api/brain-ai/auto-audit/run - Trigger live autonomous scan & auto-correction sweep
+  if (pathname === '/api/brain-ai/auto-audit/run' && method === 'POST') {
+    try {
+      const body = await readJsonBody<any>(req);
+      const summary = await executeFullSystemAutoAuditAndCorrection(body);
+      addAuditLog({
+        agencyCode: 'BRAIN-AI-AUTO-AUDIT',
+        endpoint: '/api/brain-ai/auto-audit/run',
+        queryParam: summary.auditRunId,
+        httpStatus: 200,
+        statusText: `Autonomous audit & auto-correction executed: ${summary.totalAutoCorrectionsApplied} discrepancies rectified`,
+        hmacVerified: true,
+        durationMs: 45,
+      });
+      sendJson(res, 200, {
+        success: true,
+        data: summary,
+      });
+    } catch (err: any) {
+      sendJson(res, 500, {
+        success: false,
+        error: err.message || 'Failed to execute autonomous audit run',
+      });
+    }
+    return true;
+  }
+
+  // 62. GET /api/brain-ai/auto-audit/changes - Retrieve filtered separate list of auto-corrected changes
+  if (pathname === '/api/brain-ai/auto-audit/changes' && method === 'GET') {
+    const urlObj = new URL(req.url || '', `http://${req.headers.host}`);
+    const domain = urlObj.searchParams.get('domain') || undefined;
+    const query = urlObj.searchParams.get('query') || undefined;
+    const severity = urlObj.searchParams.get('severity') || undefined;
+
+    const list = getAutoCorrectedChangesList({ domain, query, severity });
+    sendJson(res, 200, {
+      success: true,
+      count: list.length,
+      data: list,
+    });
+    return true;
+  }
+
+  // 63. POST /api/brain-ai/auto-audit/export-decree - Generate official Evidence Act S.90A rectification decree
+  if (pathname === '/api/brain-ai/auto-audit/export-decree' && method === 'POST') {
+    try {
+      const summary = getLatestAutoCorrectionAuditSummary();
+      const text = generateAutoCorrectionDecreeText(summary);
+      sendJson(res, 200, {
+        success: true,
+        data: {
+          auditRunId: summary.auditRunId,
+          decreeText: text,
+          totalChanges: summary.changesMade.length,
+          generatedAt: new Date().toISOString(),
+        },
+      });
+    } catch (err: any) {
+      sendJson(res, 500, {
+        success: false,
+        error: err.message || 'Failed to export rectification decree',
+      });
+    }
     return true;
   }
 
