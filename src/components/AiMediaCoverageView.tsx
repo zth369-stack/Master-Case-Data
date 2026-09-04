@@ -85,7 +85,7 @@ export function AiMediaCoverageView({ initialTriggerId }: AiMediaCoverageViewPro
         }
       }
     } catch (err) {
-      console.error('Failed to load media or precedent data:', err);
+      console.warn('Failed to load media or precedent data:', err);
     } finally {
       setIsLoading(false);
     }
@@ -110,7 +110,7 @@ export function AiMediaCoverageView({ initialTriggerId }: AiMediaCoverageViewPro
         setAiResult(json.data);
       }
     } catch (err) {
-      console.error('AI Media analysis error:', err);
+      console.warn('AI Media analysis error:', err);
     } finally {
       setIsGenerating(false);
     }

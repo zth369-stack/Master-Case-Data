@@ -93,46 +93,52 @@ export function BrainAiCorrectionalCenterView({
   } | null>(null);
   const [copiedCert, setCopiedCert] = useState<boolean>(false);
 
-  // 1. Load Initial Cases, Verification Registry and Auto-Audit Summary
+  // 1. Load Initial Cases, Verification Registry and Auto-Audit Summary with auto-retry
   const loadInitialData = async () => {
-    try {
-      // Load auto-audit summary
-      const auditRes = await fetch('/api/brain-ai/auto-audit/summary');
-      if (auditRes.ok) {
-        const auditJson = await auditRes.json();
-        if (auditJson.success && auditJson.data) {
-          setAutoAuditSummary(auditJson.data);
-        }
-      }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const [auditRes, casesRes, verRes] = await Promise.all([
+          fetch('/api/brain-ai/auto-audit/summary'),
+          fetch('/api/brain-ai/cases'),
+          fetch('/api/brain-ai/verification-system'),
+        ]);
 
-      // Load preset cases
-      const casesRes = await fetch('/api/brain-ai/cases');
-      if (casesRes.ok) {
-        const casesJson = await casesRes.json();
-        if (casesJson.success && casesJson.data) {
-          setPresetCases(casesJson.data);
-          const firstCase = casesJson.data[0];
-          if (firstCase && !activeVerdict) {
-            setActiveVerdict(firstCase);
-            setSelectedCaseId(firstCase.caseId);
+        if (auditRes.ok) {
+          const auditJson = await auditRes.json();
+          if (auditJson.success && auditJson.data) {
+            setAutoAuditSummary(auditJson.data);
           }
         }
-      }
 
-      // Load data verification overview
-      const verRes = await fetch('/api/brain-ai/verification-system');
-      if (verRes.ok) {
-        const verJson = await verRes.json();
-        if (verJson.success && verJson.data) {
-          setVerificationOverview(verJson.data);
-          setVerifiedRecords(verJson.data.verifiedRecords || []);
-          if (verJson.data.verifiedRecords?.length > 0 && !selectedRecord) {
-            setSelectedRecord(verJson.data.verifiedRecords[0]);
+        if (casesRes.ok) {
+          const casesJson = await casesRes.json();
+          if (casesJson.success && casesJson.data) {
+            setPresetCases(casesJson.data);
+            const firstCase = casesJson.data[0];
+            if (firstCase && !activeVerdict) {
+              setActiveVerdict(firstCase);
+              setSelectedCaseId(firstCase.caseId);
+            }
           }
         }
+
+        if (verRes.ok) {
+          const verJson = await verRes.json();
+          if (verJson.success && verJson.data) {
+            setVerificationOverview(verJson.data);
+            setVerifiedRecords(verJson.data.verifiedRecords || []);
+            if (verJson.data.verifiedRecords?.length > 0 && !selectedRecord) {
+              setSelectedRecord(verJson.data.verifiedRecords[0]);
+            }
+          }
+        }
+
+        break;
+      } catch {
+        if (attempt < 2) {
+          await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
+        }
       }
-    } catch (err) {
-      console.error('Failed to load Brain AI and Verification data:', err);
     }
   };
 
@@ -172,7 +178,7 @@ export function BrainAiCorrectionalCenterView({
         }
       }
     } catch (err) {
-      console.error('Failed to execute Brain AI correction:', err);
+      console.warn('Failed to execute Brain AI correction:', err);
     } finally {
       setIsAnalyzing(false);
     }
@@ -197,7 +203,7 @@ export function BrainAiCorrectionalCenterView({
         }
       }
     } catch (err) {
-      console.error('Failed to query verification registry:', err);
+      console.warn('Failed to query verification registry:', err);
     } finally {
       setIsSearching(false);
     }
@@ -218,7 +224,7 @@ export function BrainAiCorrectionalCenterView({
         }
       }
     } catch (err) {
-      console.error('Failed to generate certificate:', err);
+      console.warn('Failed to generate certificate:', err);
     }
   };
 
@@ -251,7 +257,7 @@ export function BrainAiCorrectionalCenterView({
         }
       }
     } catch (err) {
-      console.error('Failed to run autonomous auto-audit:', err);
+      console.warn('Failed to run autonomous auto-audit:', err);
     } finally {
       setIsRunningAutoAudit(false);
       setAutoAuditProgressStep('');
@@ -283,7 +289,7 @@ export function BrainAiCorrectionalCenterView({
         }
       }
     } catch (err) {
-      console.error('Failed to export decree:', err);
+      console.warn('Failed to export decree:', err);
     }
   };
 

@@ -763,6 +763,14 @@ export interface AdditionalEvidentiaryDocument {
   counterpartsExcludedOrRebutted: string;
   sha256VerificationHash: string;
   custodianSeal: string;
+  // Lawyers Court Assembly & Extraction Metadata
+  courtOrJudicialForum?: string;
+  exactCourtLocation?: string;
+  courtDocketOrFilingRef?: string;
+  bundleExtractionCoordinates?: string;
+  sourceDataAuthority?: string;
+  custodianJurisdiction?: string;
+  statutoryAdmissibilityRule?: string;
 }
 
 export interface PatriarchAndLineageDetails {
@@ -968,6 +976,7 @@ export interface CompleteForensicThesisDossier {
     evidentiaryProof: string;
     unanimousJudicialPrecedent: string;
   }[];
+  autoCorrectedChanges?: BrainAiAutoCorrectedChange[];
 }
 
 // -------------------------------------------------------------
@@ -1090,7 +1099,18 @@ export type AutoCorrectionDomain =
   | 'CORPORATE_REGISTRY'
   | 'CIVIL_LINEAGE'
   | 'JUDICIAL_PROBATE'
+  | 'PROBATE_AND_ESTATE'
+  | 'POWER_OF_ATTORNEY'
   | 'FINANCIAL_AMLA'
+  | 'BANKING_AND_FINANCE'
+  | 'LAND_TITLES'
+  | 'SWISS_BANKING'
+  | 'TAX_AUTHORITY'
+  | 'CRIMINAL_JUSTICE'
+  | 'ARBITRATION_TRIBUNAL'
+  | 'OFFSHORE_JURISDICTION'
+  | 'INSOLVENCY_DEPARTMENT'
+  | 'APEX_JUDICIARY'
   | 'FORENSIC_EVIDENCE'
   | 'ASSET_LEDGER'
   | 'PROXY_IDENTIFICATION'

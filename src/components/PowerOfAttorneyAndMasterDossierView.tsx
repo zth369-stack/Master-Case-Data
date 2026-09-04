@@ -95,7 +95,7 @@ export function PowerOfAttorneyAndMasterDossierView() {
         setPoaList(json.data.records);
       }
     } catch (err) {
-      console.error('Failed to discover Power of Attorney records:', err);
+      console.warn('Failed to discover Power of Attorney records:', err);
     } finally {
       setIsLoadingPoa(false);
     }
@@ -111,7 +111,7 @@ export function PowerOfAttorneyAndMasterDossierView() {
         setMasterDossier(json.data);
       }
     } catch (err) {
-      console.error('Failed to load master dossier export:', err);
+      console.warn('Failed to load master dossier export:', err);
     } finally {
       setIsLoadingMaster(false);
     }
@@ -127,7 +127,7 @@ export function PowerOfAttorneyAndMasterDossierView() {
         setThesisData(json.data);
       }
     } catch (err) {
-      console.error('Failed to load complete thesis:', err);
+      console.warn('Failed to load complete thesis:', err);
     } finally {
       setIsLoadingThesis(false);
     }
@@ -140,7 +140,7 @@ export function PowerOfAttorneyAndMasterDossierView() {
       const text = await res.text();
       setMarkdownContent(text);
     } catch (err) {
-      console.error('Failed to load markdown brief:', err);
+      console.warn('Failed to load markdown brief:', err);
     }
   };
 
