@@ -1,11 +1,7 @@
 import express from 'express';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { handleApiRequest } from './src/server/apiHandler.js';
 import { handleMcpHttpRequest } from './src/server/mcpServer.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = 3000;
@@ -30,6 +26,15 @@ app.use('/mcp', async (req, res, next) => {
 });
 
 // API routes handled by the SSM Middleware module
+app.get('/ws/telemetry', (_req, res) => {
+  res.json({
+    status: 'healthy',
+    echo: 'telemetry_online',
+    active_nodes: 4,
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.use('/api', async (req, res, next) => {
   try {
     const handled = await handleApiRequest(req, res);
@@ -43,11 +48,12 @@ app.use('/api', async (req, res, next) => {
 });
 
 // Serve static frontend in production
-app.use(express.static(path.join(__dirname, 'dist')));
+const distPath = path.join(process.cwd(), 'dist');
+app.use(express.static(distPath));
 
 // Fallback for SPA routing
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {

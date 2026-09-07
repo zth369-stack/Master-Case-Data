@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { generateContentWithResilience } from './geminiClient.js';
 import type {
   ScrapedDocument,
   CrawlerTargetConfig,
@@ -1028,7 +1029,6 @@ export async function executeAiDocumentRetrieval(
   // 3. Optional Gemini Semantic Reranking & Synthesis
   if (process.env.GEMINI_API_KEY) {
     try {
-      const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       const prompt = `You are a Principal Forensic Legal Investigator and Modern Code Intelligence Engine specializing in cross-border corporate intelligence, Malaysian company law (Companies Act 2016 & Partnership Act 1961 Section 4(c)), Swiss Banking Law Art. 9 AMLA, and Cayman Islands trust instruments.
 
 USER RETRIEVAL QUERY:
@@ -1052,26 +1052,28 @@ Provide a razor-sharp, authoritative AI synthesis addressing the query with:
 3. How the retrieved code snippets and schemas enable automated verification.
 4. 3 specific recommended legal actions for investigators or counsel.`;
 
-      const response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
+      const result = await generateContentWithResilience({
+        preferredModel: 'gemini-3.8-flash',
         contents: prompt,
       });
 
-      const responseText = response.text || '';
+      const responseText = result?.text || '';
 
-      return {
-        source: 'gemini-3.8-flash',
-        query: params.query,
-        timestamp: new Date().toISOString(),
-        aiSynthesis: responseText,
-        topDocuments,
-        retrievedCodeSnippets,
-        recommendedLegalActions: [
-          'Tender the Section 14 Superform and Form 24 allotment in High Court Suit 4-334567 to establish sole initial share subscription by Kavinath Ganeshan.',
-          'Formally serve the Swiss Banking Form A AMLA declaration (Banque Lombard Odier #ch9300767000usd000001) to rebut Proxy X’s beneficial claims.',
-          'Execute automated cryptographic hash validation using verifySwiftMT103LedgerIntegrity() to support criminal forgery referrals against altered AmBank credit traces.',
-        ],
-      };
+      if (responseText) {
+        return {
+          source: 'gemini-3.8-flash',
+          query: params.query,
+          timestamp: new Date().toISOString(),
+          aiSynthesis: responseText,
+          topDocuments,
+          retrievedCodeSnippets,
+          recommendedLegalActions: [
+            'Tender the Section 14 Superform and Form 24 allotment in High Court Suit 4-334567 to establish sole initial share subscription by Kavinath Ganeshan.',
+            'Formally serve the Swiss Banking Form A AMLA declaration (Banque Lombard Odier #ch9300767000usd000001) to rebut Proxy X’s beneficial claims.',
+            'Execute automated cryptographic hash validation using verifySwiftMT103LedgerIntegrity() to support criminal forgery referrals against altered AmBank credit traces.',
+          ],
+        };
+      }
     } catch (err) {
       console.warn('Gemini document retrieval error, falling back to local semantic vector engine:', err);
     }

@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { generateContentWithResilience } from './geminiClient.js';
 import type {
   SwiftLogEntry,
   UboProfile,
@@ -533,10 +534,7 @@ export async function executeAiMediaCaseAnalysis(
       ? 'Special Multi-Agency Taskforce Investigator (LHDN/BNM/SSM)'
       : 'Senior Financial Investigative Journalist (The Edge / Bloomberg)';
 
-  // Check if GEMINI_API_KEY is available
-  const client = getAiClient();
-
-  if (client && process.env.GEMINI_API_KEY) {
+  if (process.env.GEMINI_API_KEY) {
     try {
       const prompt = `You are a Principal Legal & Financial Investigative AI specializing in Malaysian Corporate Law, High Court Litigation, Cross-Border Offshore Asset Tracing, and Media Risk Assessment.
 
@@ -565,23 +563,24 @@ Provide a highly thorough, authoritative analysis formatted with:
 
 Keep the style sophisticated, objective, and legally rigorous.`;
 
-      const response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
+      const result = await generateContentWithResilience({
+        preferredModel: 'gemini-3.8-flash',
         contents: prompt,
       });
 
-      const responseText = response.text || '';
+      const responseText = result?.text || '';
 
-      // Parse or format response
-      const firstLine = responseText.split('\n').find((l) => l.trim().length > 10) || '';
-      const cleanHeadline = firstLine.replace(/^[#* \t]+/, '').replace(/^Headline:\s*/i, '');
+      if (responseText) {
+        // Parse or format response
+        const firstLine = responseText.split('\n').find((l) => l.trim().length > 10) || '';
+        const cleanHeadline = firstLine.replace(/^[#* \t]+/, '').replace(/^Headline:\s*/i, '');
 
-      return {
-        source: 'gemini-3.8-flash',
-        timestamp: new Date().toISOString(),
-        generatedHeadline: cleanHeadline || 'High Court Sub-Judice Exposé: The Multi-Jurisdiction Asset Tracing Web',
-        mediaArticleHtml: responseText,
-        subJudiceRiskAnalysis: {
+        return {
+          source: 'gemini-3.8-flash',
+          timestamp: new Date().toISOString(),
+          generatedHeadline: cleanHeadline || 'High Court Sub-Judice Exposé: The Multi-Jurisdiction Asset Tracing Web',
+          mediaArticleHtml: responseText,
+          subJudiceRiskAnalysis: {
           riskRating: targetTrigger.subJudiceSensitivity === 'EXTREME' ? 'CRITICAL' : 'HIGH',
           contemptOfCourtWarning:
             'Order 52 Rules of Court 2012 stricture applies. Active proceedings before High Court Commercial Court 4 (Suit No. 4-334567) prohibit publishing commentary that pre-judges the credibility of Proxy X or Kavinath Ganeshan.',

@@ -24,6 +24,15 @@ interface McpGatewayViewProps {
 }
 
 const MCP_PRESETS: Record<string, { name: string; tool: string; args: Record<string, unknown> }> = {
+  courtlistener_targeted_nric: {
+    name: 'CourtListener: Targeted NRIC Verification (960906-08-5839)',
+    tool: 'courtlistener_search_opinions',
+    args: {
+      query: 'Kavinath A/L Ganesan 960906-08-5839',
+      court: 'all',
+      order_by: 'score desc',
+    },
+  },
   courtlistener_kavinath: {
     name: 'CourtListener: Sub-judice Litigation Search',
     tool: 'courtlistener_search_opinions',

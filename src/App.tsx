@@ -35,6 +35,7 @@ import {
   Brain,
   Layers,
   FileCheck2,
+  Network,
 } from 'lucide-react';
 import type {
   SanitizedConfigReport,
@@ -59,6 +60,9 @@ import { CourtReadyPdfExporterView } from './components/CourtReadyPdfExporterVie
 import { StrategicIntegrationsHubView } from './components/StrategicIntegrationsHubView';
 import { RealExtractsGatewayView } from './components/RealExtractsGatewayView';
 import { DataRetrievalTechnicalWindow } from './components/DataRetrievalTechnicalWindow';
+import { EnterpriseGenAiMcpConsole } from './components/EnterpriseGenAiMcpConsole';
+import { OsintMultiAgentPipelineView } from './components/OsintMultiAgentPipelineView';
+import { SovereignOsintEngineView } from './components/SovereignOsintEngineView';
 
 const DEFAULT_FALLBACK_CONFIG: SanitizedConfigReport = {
   timestamp: new Date().toISOString(),
@@ -127,8 +131,8 @@ const DEFAULT_FALLBACK_CONFIG: SanitizedConfigReport = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'real_extracts' | 'strategic_integrations' | 'brain_ai_correction' | 'poa_master_dossier' | 'court_ready_pdf_exporter' | 'probate_court_dna' | 'crawler_retrieval' | 'veridian_swift' | 'case_dispute' | 'media_ai' | 'mcp' | 'icij' | 'skills' | 'verify' | 'dossier' | 'account' | 'test' | 'config' | 'audit' | 'env_guide'
-  >('real_extracts');
+    'osint_multi_agent' | 'enterprise_mcp' | 'real_extracts' | 'strategic_integrations' | 'brain_ai_correction' | 'poa_master_dossier' | 'court_ready_pdf_exporter' | 'probate_court_dna' | 'crawler_retrieval' | 'veridian_swift' | 'case_dispute' | 'media_ai' | 'mcp' | 'icij' | 'skills' | 'verify' | 'dossier' | 'account' | 'test' | 'config' | 'audit' | 'env_guide'
+  >('osint_multi_agent');
   const [showTechnicalSpecWindow, setShowTechnicalSpecWindow] = useState(false);
   const [selectedMediaTriggerId, setSelectedMediaTriggerId] = useState<string | undefined>(undefined);
   const [officerAccount, setOfficerAccount] = useState<OfficerAccount | null>(null);
@@ -396,6 +400,51 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
 
         {/* Tab Navigation */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 border-t border-slate-800/80 pt-1 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('sovereign_osint')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
+              activeTab === 'sovereign_osint'
+                ? 'border-cyan-500 text-cyan-300 bg-cyan-950/70 shadow-sm'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+            Sovereign OSINT Engine
+            <span className="px-1.5 py-0.2 rounded-full bg-cyan-500/30 text-cyan-300 text-[10px] font-mono font-bold">
+              v4.8 PROD
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('osint_multi_agent')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
+              activeTab === 'osint_multi_agent'
+                ? 'border-indigo-500 text-indigo-300 bg-indigo-950/70 shadow-sm'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+            }`}
+          >
+            <Network className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+            OSINT Multi-Agent (31 Tools)
+            <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/30 text-indigo-300 text-[10px] font-mono font-bold">
+              6 Servers &amp; DAG
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('enterprise_mcp')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
+              activeTab === 'enterprise_mcp'
+                ? 'border-indigo-500 text-indigo-300 bg-indigo-950/50 shadow-sm'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+            Enterprise GenAI &amp; MCP
+            <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-mono font-semibold">
+              Universal Rewriter
+            </span>
+          </button>
+
           <button
             onClick={() => setActiveTab('brain_ai_correction')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
@@ -689,6 +738,21 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
             legal decisions, ICIJ Offshore Leaks Reconcile API, and evidentiary document verification.
           </div>
         </div>
+
+        {/* TAB: SOVEREIGN OSINT MULTI-AGENT ENGINE (v4.8 PROD) */}
+        {activeTab === 'sovereign_osint' && (
+          <SovereignOsintEngineView onNavigateTab={(tab) => setActiveTab(tab)} />
+        )}
+
+        {/* TAB: PRODUCTION-GRADE OSINT MULTI-AGENT ARCHITECTURE (31 MCP TOOLS & 6-AGENT DAG) */}
+        {activeTab === 'osint_multi_agent' && (
+          <OsintMultiAgentPipelineView />
+        )}
+
+        {/* TAB: ENTERPRISE GENAI & MCP ORCHESTRATOR (UNIVERSAL ANYTHING-TO-ANYTHING REWRITER) */}
+        {activeTab === 'enterprise_mcp' && (
+          <EnterpriseGenAiMcpConsole />
+        )}
 
         {/* TAB: BRAIN AI CORRECTIONAL CENTER & DATA VERIFICATION SYSTEM */}
         {activeTab === 'brain_ai_correction' && (

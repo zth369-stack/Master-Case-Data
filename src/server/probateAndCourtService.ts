@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { generateContentWithResilience } from './geminiClient.js';
 import type {
   AiProbateInvestigationRequest,
   AiProbateInvestigationResponse,
@@ -469,8 +470,7 @@ export async function executeProbateCourtAiInvestigation(
   const query = request.query.trim();
   const focus = request.focusArea || 'GENERAL';
 
-  const client = getAiClient();
-  if (client && process.env.GEMINI_API_KEY) {
+  if (process.env.GEMINI_API_KEY) {
     try {
       const prompt = `You are a Senior Judicial Registrar and Principal Forensic Evidence Expert specializing in Malaysian Probate Law, Court Dockets, Forensic DNA Paternity Determination, and Cross-Border Fiduciary Litigation.
       
@@ -500,19 +500,20 @@ Provide an exhaustive, authoritative legal & evidentiary analysis covering:
 4. Summary matrix of relevant court dockets.
 5. Actionable legal recommendations for enforcement, asset transmission, and defense.`;
 
-      const response = await client.models.generateContent({
-        model: 'gemini-3.8-flash',
+      const result = await generateContentWithResilience({
+        preferredModel: 'gemini-3.8-flash',
         contents: prompt,
       });
 
-      const responseText = response.text || '';
+      const responseText = result?.text || '';
 
-      return {
-        source: 'gemini-3.8-flash',
-        query,
-        timestamp: new Date().toISOString(),
-        investigationAnalysis: responseText,
-        dnaEvidenceWeight:
+      if (responseText) {
+        return {
+          source: 'gemini-3.8-flash',
+          query,
+          timestamp: new Date().toISOString(),
+          investigationAnalysis: responseText,
+          dnaEvidenceWeight:
           'Conclusive & Irrebuttable under Evidence Act 1950 Section 112. 99.9999% Probability established by Jabatan Kimia Malaysia 24-loci STR multiplex profile.',
         probateStandingAssessment:
           'Grant of Probate formally extracted and sealed in High Court Petition WA-31NCvC-882-07/2024. All adverse caveats expunged and purported codicils quashed.',

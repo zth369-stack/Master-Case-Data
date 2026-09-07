@@ -23,11 +23,20 @@ import {
   Key,
   Database,
   Eye,
+  Layers,
+  Sparkles,
+  Check,
+  Plus,
+  BookOpen,
 } from 'lucide-react';
-import type {
-  EnterpriseB2BGateway,
-  IngestedRealDocument,
-  SubpoenaCausePaperData,
+import {
+  COURT_REGISTRY_OPTIONS,
+  PRESET_COURT_CASES,
+  SUBPOENA_TARGET_OPTIONS,
+  type EnterpriseB2BGateway,
+  type IngestedRealDocument,
+  type SubpoenaCausePaperData,
+  type SubpoenaTargetType,
 } from '../shared/realExtractsData';
 import { jsPDF } from 'jspdf';
 
@@ -64,11 +73,21 @@ export function RealExtractsGatewayView() {
   const [b2bProduct, setB2bProduct] = useState<string>('CTC Section 14 Superform (First Directors & Subscribers)');
   const [gatewayHandshakeResult, setGatewayHandshakeResult] = useState<any | null>(null);
 
-  // Subpoena state
-  const [subpoenaType, setSubpoenaType] = useState<'JPN' | 'HIGH_COURT_REGISTRAR'>('JPN');
+  // Subpoena state (All Courts, All Cases, All Statutory Targets)
+  const [selectedCourtId, setSelectedCourtId] = useState<string>('HIGH_COURT_KL_COMMERCIAL');
+  const [selectedCaseId, setSelectedCaseId] = useState<string>('CASE_WA_COMMERCIAL');
+  const [selectedSubpoenaTarget, setSelectedSubpoenaTarget] = useState<SubpoenaTargetType>('KETUA_PENGARAH_JPN');
   const [subpoenaHearingDate, setSubpoenaHearingDate] = useState('2026-09-28');
   const [subpoenaCourtRoom, setSubpoenaCourtRoom] = useState('Mahkamah Tinggi Dagang 4 (Aras 4, Sayap Kanan)');
+  const [subpoenaCaseNumber, setSubpoenaCaseNumber] = useState('WA-22NCC-482-09/2026');
+  const [subpoenaPlaintiff, setSubpoenaPlaintiff] = useState('PHILIP CHONG VUN SHIN (Sebagai Pentadbir Harta Pusaka & Benefisiari Tunggal)');
+  const [subpoenaDefendant, setSubpoenaDefendant] = useState('MARY CHONG MEE LIN & 3 YANG LAIN');
+  const [subpoenaLanguage, setSubpoenaLanguage] = useState<'malay' | 'english'>('malay');
+  const [subpoenaAutoAttach, setSubpoenaAutoAttach] = useState(true);
   const [subpoenaResult, setSubpoenaResult] = useState<any | null>(null);
+  const [isAttachingSubpoena, setIsAttachingSubpoena] = useState(false);
+  const [isBatchGenerating, setIsBatchGenerating] = useState(false);
+  const [attachedSuccessInfo, setAttachedSuccessInfo] = useState<{ exhibitNo: string; certNo: string; title: string } | null>(null);
 
   // Selected document for full detail modal
   const [viewingDoc, setViewingDoc] = useState<IngestedRealDocument | null>(null);
@@ -253,17 +272,54 @@ export function RealExtractsGatewayView() {
     }
   };
 
-  // Generate Subpoena Duces Tecum
-  const handleGenerateSubpoena = async () => {
+  // Case Selection Sync Handler
+  const handleCaseChange = (caseId: string) => {
+    setSelectedCaseId(caseId);
+    const matched = PRESET_COURT_CASES.find((c) => c.id === caseId);
+    if (matched) {
+      setSubpoenaCaseNumber(matched.caseNumber);
+      setSubpoenaPlaintiff(matched.plaintiff);
+      setSubpoenaDefendant(matched.defendant);
+      setSubpoenaHearingDate(matched.hearingDate);
+      setSubpoenaCourtRoom(matched.courtRoom);
+      if (matched.courtId) {
+        setSelectedCourtId(matched.courtId);
+      }
+      if (matched.recommendedTargets && matched.recommendedTargets.length > 0) {
+        setSelectedSubpoenaTarget(matched.recommendedTargets[0]);
+      }
+    }
+  };
+
+  // Court Registry Selection Sync Handler
+  const handleCourtChange = (courtId: string) => {
+    setSelectedCourtId(courtId);
+    const matched = COURT_REGISTRY_OPTIONS.find((c) => c.id === courtId);
+    if (matched && matched.defaultCourtRoom) {
+      setSubpoenaCourtRoom(matched.defaultCourtRoom);
+    }
+  };
+
+  // Generate Subpoena Duces Tecum (Form 66 ROC 2012)
+  const handleGenerateSubpoena = async (forceAttach?: boolean) => {
     setIsProcessing(true);
     setErrorMessage(null);
+    setAttachedSuccessInfo(null);
+    const shouldAttach = forceAttach !== undefined ? forceAttach : subpoenaAutoAttach;
+
     try {
       const res = await fetch('/api/real-extracts/subpoena/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          subpoenaType,
+          subpoenaType: selectedSubpoenaTarget,
+          courtId: selectedCourtId,
+          caseId: selectedCaseId,
+          autoAttachToDossier: shouldAttach,
           overrides: {
+            caseNumber: subpoenaCaseNumber,
+            plaintiff: subpoenaPlaintiff,
+            defendant: subpoenaDefendant,
             hearingDate: subpoenaHearingDate,
             courtRoom: subpoenaCourtRoom,
           },
@@ -272,6 +328,16 @@ export function RealExtractsGatewayView() {
       const data = await res.json();
       if (res.ok && data.success) {
         setSubpoenaResult(data.data);
+        if (data.data.attachedDoc) {
+          setDossierDocuments((prev) => [data.data.attachedDoc, ...prev]);
+          setAttachedSuccessInfo({
+            exhibitNo: data.data.attachedDoc.markedExhibitNo,
+            certNo: data.data.attachedDoc.forensicReport?.section90ACertNo || 'CERT-90A',
+            title: data.data.attachedDoc.title,
+          });
+          setStatusMessage(`Subpoena produced & attached to Court Dossier as ${data.data.attachedDoc.markedExhibitNo}!`);
+          setTimeout(() => setStatusMessage(null), 6000);
+        }
       } else {
         setErrorMessage(data.error || 'Subpoena generation failed');
       }
@@ -279,6 +345,74 @@ export function RealExtractsGatewayView() {
       setErrorMessage('Failed to generate court subpoena');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  // Attach currently produced Subpoena to the Evidence Dossier
+  const handleAttachProducedSubpoena = async () => {
+    if (!subpoenaResult?.data) return;
+    setIsAttachingSubpoena(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch('/api/real-extracts/subpoena/attach-dossier', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subpoenaData: subpoenaResult.data,
+          formattedNoticeMalay: subpoenaResult.formattedLegalNoticeMalay,
+          customNotes: `Perintah Sepina Duces Tecum Borang 66 KKM 2012 untuk ${subpoenaResult.data.caseNumber} di ${subpoenaResult.data.courtNameMalay}. Ditujukan kepada ${subpoenaResult.data.targetOfficialTitle} bagi pembuktian statutori di Mahkamah.`,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDossierDocuments((prev) => [data.data, ...prev]);
+        setAttachedSuccessInfo({
+          exhibitNo: data.data.markedExhibitNo,
+          certNo: data.data.forensicReport?.section90ACertNo || 'CERT-90A',
+          title: data.data.title,
+        });
+        setStatusMessage(`Successfully attached to Evidence Dossier as ${data.data.markedExhibitNo}!`);
+        setTimeout(() => setStatusMessage(null), 6000);
+      } else {
+        setErrorMessage(data.error || 'Failed to attach subpoena to dossier');
+      }
+    } catch (err: any) {
+      setErrorMessage('Network error attaching subpoena to dossier');
+    } finally {
+      setIsAttachingSubpoena(false);
+    }
+  };
+
+  // Batch Generate and Attach All Subpoenas across ALL Courts and Cases
+  const handleBatchGenerateAndAttachAll = async () => {
+    setIsBatchGenerating(true);
+    setErrorMessage(null);
+    setStatusMessage('Batch generating statutory Subpoena Duces Tecum for ALL courts & cases...');
+    try {
+      const res = await fetch('/api/real-extracts/subpoena/batch-generate-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setStatusMessage(data.data.summaryText);
+        // Refresh dossier documents from server
+        const docRes = await fetch('/api/real-extracts/dossier');
+        if (docRes.ok) {
+          const docData = await docRes.json();
+          if (docData?.data?.documents) {
+            setDossierDocuments(docData.data.documents);
+          }
+        }
+        setTimeout(() => setStatusMessage(null), 8000);
+      } else {
+        setErrorMessage(data.error || 'Batch subpoena generation failed');
+      }
+    } catch (err: any) {
+      setErrorMessage('Network error during batch subpoena generation');
+    } finally {
+      setIsBatchGenerating(false);
     }
   };
 
@@ -290,72 +424,81 @@ export function RealExtractsGatewayView() {
 
     doc.setFont('times', 'bold');
     doc.setFontSize(11);
-    doc.text(`DALAM MAHKAMAH TINGGI MALAYA DI ${sub.courtLocation.toUpperCase()}`, 105, 20, { align: 'center' });
-    doc.text(`${sub.division.toUpperCase()}`, 105, 26, { align: 'center' });
-    doc.text(`GUAMAN SIVIL NO: ${sub.caseNumber}`, 105, 32, { align: 'center' });
-
-    doc.setFont('times', 'normal');
-    doc.setFontSize(10);
-    doc.text('ANTARA:', 20, 42);
-    doc.setFont('times', 'bold');
-    doc.text(sub.plaintiff, 20, 48);
-    doc.setFont('times', 'italic');
-    doc.text('... PLAINTIF', 160, 48);
-
-    doc.setFont('times', 'normal');
-    doc.text('DAN', 20, 56);
-    doc.setFont('times', 'bold');
-    doc.text(sub.defendant, 20, 62);
-    doc.setFont('times', 'italic');
-    doc.text('... DEFENDAN-DEFENDAN', 145, 62);
-
-    doc.line(20, 68, 190, 68);
-
-    doc.setFont('times', 'bold');
-    doc.setFontSize(11);
-    doc.text('BORANG 66 (ATURAN 38 KAEDAH 13 KAEDAH-KAEDAH MAHKAMAH 2012)', 105, 75, { align: 'center' });
-    doc.text('SAMAN KEPADA SAKSI UNTUK MENGEMUKAKAN DOKUMEN (SUBPOENA DUCES TECUM)', 105, 81, { align: 'center' });
+    doc.text(`DALAM ${(sub.courtNameMalay || 'MAHKAMAH TINGGI MALAYA').toUpperCase()}`, 105, 18, { align: 'center' });
+    if (sub.divisionMalay) {
+      doc.text(`${sub.divisionMalay.toUpperCase()}`, 105, 24, { align: 'center' });
+    }
+    doc.text(`${sub.caseNumber?.startsWith('W-02') ? 'RAYUAN SIVIL NO' : 'GUAMAN SIVIL NO'}: ${sub.caseNumber}`, 105, 30, { align: 'center' });
 
     doc.setFont('times', 'normal');
     doc.setFontSize(9.5);
-    doc.text(`KEPADA: ${sub.targetOfficialTitle}`, 20, 92);
-    const splitAddr = doc.splitTextToSize(sub.targetAddress, 160);
-    doc.text(splitAddr, 20, 98);
+    doc.text('ANTARA:', 20, 39);
+    doc.setFont('times', 'bold');
+    const plLines = doc.splitTextToSize(sub.plaintiff, 125);
+    doc.text(plLines, 20, 45);
+    doc.setFont('times', 'italic');
+    doc.text(sub.caseNumber?.startsWith('W-02') ? '... PERAYU / PLAINTIF' : '... PLAINTIF', 150, 45);
 
-    let yPos = 98 + splitAddr.length * 5 + 4;
-    doc.text(`BAHAWASANYA kehadiran tuan adalah dikehendaki pada pendengaran tindakan ini pada:`, 20, yPos);
-    yPos += 6;
+    const yDan = 45 + plLines.length * 4.5;
+    doc.setFont('times', 'normal');
+    doc.text('DAN', 20, yDan);
+    doc.setFont('times', 'bold');
+    const defLines = doc.splitTextToSize(sub.defendant, 125);
+    doc.text(defLines, 20, yDan + 6);
+    doc.setFont('times', 'italic');
+    doc.text(sub.caseNumber?.startsWith('W-02') ? '... RESPONDEN' : '... DEFENDAN', 150, yDan + 6);
+
+    const yLine = yDan + 6 + defLines.length * 4.5 + 2;
+    doc.line(20, yLine, 190, yLine);
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10.5);
+    doc.text('BORANG 66 (ATURAN 38 KAEDAH 13 KAEDAH-KAEDAH MAHKAMAH 2012)', 105, yLine + 7, { align: 'center' });
+    doc.text('SAMAN KEPADA SAKSI UNTUK MENGEMUKAKAN DOKUMEN (SUBPOENA DUCES TECUM)', 105, yLine + 12, { align: 'center' });
+
+    doc.setFont('times', 'bold');
+    doc.setFontSize(9);
+    doc.text(`KEPADA: ${sub.targetOfficialTitle}`, 20, yLine + 20);
+    doc.setFont('times', 'normal');
+    const splitAddr = doc.splitTextToSize(sub.targetAddress, 160);
+    doc.text(splitAddr, 20, yLine + 25);
+
+    let yPos = yLine + 25 + splitAddr.length * 4.5 + 3;
+    doc.text('BAHAWASANYA kehadiran tuan atau wakil kuasa tuan adalah dikehendaki pada pendengaran tindakan ini pada:', 20, yPos);
+    yPos += 5;
     doc.setFont('times', 'bold');
     doc.text(`TARIKH: ${sub.hearingDate}   |   MASA: ${sub.hearingTime}   |   TEMPAT: ${sub.courtRoom}`, 20, yPos);
-    yPos += 8;
+    yPos += 7;
 
     doc.setFont('times', 'normal');
-    doc.text('DAN TUAN ADALAH DENGAN INI DIPERINTAHKAN untuk membawa bersama dan mengemukakan:', 20, yPos);
-    yPos += 6;
+    doc.text('DAN TUAN ADALAH DENGAN INI DIPERINTAHKAN untuk membawa bersama dan mengemukakan kepada Mahkamah ini:', 20, yPos);
+    yPos += 5;
 
     sub.documentsToProduce.forEach((docItem, idx) => {
       doc.setFont('times', 'bold');
-      doc.text(`(${idx + 1})`, 22, yPos);
+      doc.text(`[${idx + 1}]`, 22, yPos);
       doc.setFont('times', 'normal');
       const lines = doc.splitTextToSize(docItem, 150);
-      doc.text(lines, 30, yPos);
-      yPos += lines.length * 5 + 3;
+      doc.text(lines, 28, yPos);
+      yPos += lines.length * 4.2 + 2.5;
     });
 
-    yPos += 4;
+    yPos += 3;
     doc.setFont('times', 'bold');
-    doc.text('PERINGATAN PENAL:', 20, yPos);
+    doc.text('PERINGATAN PENAL (HINA MAHKAMAH):', 20, yPos);
     doc.setFont('times', 'normal');
-    doc.text('Kegagalan mematuhi saman ini tanpa alasan sah boleh dikenakan tindakan pengkomitan menghina Mahkamah.', 55, yPos);
+    const penalLines = doc.splitTextToSize('Kegagalan mematuhi saman ini tanpa alasan sah undang-undang mendedahkan tuan kepada tindakan pengkomitan di bawah Aturan 52 Kaedah-Kaedah Mahkamah 2012.', 160);
+    doc.text(penalLines, 20, yPos + 4);
+    yPos += 4 + penalLines.length * 4.2 + 6;
 
-    yPos += 16;
-    doc.text('BERTARIKH: _____________________', 20, yPos);
-    doc.text('METERAI MAHKAMAH TINGGI MALAYA', 120, yPos);
-    yPos += 14;
+    doc.text(`BERTARIKH PADA: ${new Date().toLocaleDateString('ms-MY', { day: 'numeric', month: 'long', year: 'numeric' })}`, 20, yPos);
+    doc.text(`METERAI: ${sub.courtSealTextMalay || 'METERAI MAHKAMAH'}`, 115, yPos);
+    yPos += 12;
     doc.text('...........................................................................', 115, yPos);
-    doc.text('TIMBALAN PENDAFTAR KANAN', 125, yPos + 5);
+    doc.text(sub.registrarTitleMalay || 'PENDAFTAR / TIMBALAN PENDAFTAR', 115, yPos + 4);
+    doc.text(sub.courtNameMalay || 'MAHKAMAH TINGGI MALAYA', 115, yPos + 8);
 
-    doc.save(`SUBPOENA_DUCES_TECUM_BORANG_66_${sub.caseNumber.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
+    doc.save(`SUBPOENA_BORANG_66_${(sub.caseNumber || 'CASE').replace(/[^a-zA-Z0-9]/g, '_')}_${(sub.subpoenaTarget || 'TARGET').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`);
   };
 
   // Delete document
@@ -903,148 +1046,421 @@ export function RealExtractsGatewayView() {
         </div>
       )}
 
-      {/* SUB-TAB 3: COURT SUBPOENA DUCES TECUM GENERATOR */}
+      {/* SUB-TAB 3: COURT SUBPOENA DUCES TECUM GENERATOR (ALL COURTS & ALL CASES) */}
       {activeSubTab === 'subpoena_generator' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Controls */}
-          <div className="lg:col-span-5 bg-slate-900/90 rounded-2xl p-6 border border-slate-800 space-y-4">
-            <div>
-              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold uppercase">
-                Statutory Discovery: Order 38 Rule 13
-              </span>
-              <h3 className="text-base font-bold text-white mt-1 flex items-center gap-2">
-                <Scale className="w-4 h-4 text-emerald-400" />
-                Subpoena Duces Tecum Generator
+        <div className="space-y-6">
+          {/* Top Banner & Batch Control Bar */}
+          <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/50 border border-slate-800 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold uppercase border border-emerald-500/30">
+                  Statutory Discovery • Order 38 Rule 13 ROC 2012
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-mono font-bold uppercase border border-indigo-500/30">
+                  All 9 Malaysian Courts &amp; 6 Judicial Suits Supported
+                </span>
+              </div>
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 mt-1">
+                <Scale className="w-5 h-5 text-emerald-400" />
+                Subpoena Duces Tecum Generator &amp; Dossier Attacher
               </h3>
-              <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                Essential for restricted government registers (such as <strong>JPN Birth Register Books</strong> under Act 299 or <strong>High Court Power of Attorney Deposit Books</strong> under Act 424) where digital B2B API access is restricted by law.
+              <p className="text-xs text-slate-400 max-w-3xl leading-relaxed">
+                Mandatory statutory cause paper engine under Form 66 Rules of Court 2012. Generates court-admissible subpoenas commanding registrars, director-generals, and financial controllers to physically bring original restricted books and registers to trial, and automatically anchors each to the Master Evidence Dossier with Section 90A Evidence Act certification.
               </p>
             </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Target Government Authority</label>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setSubpoenaType('JPN')}
-                    className={`w-full p-3 rounded-xl border text-left text-xs transition flex items-start gap-2.5 ${
-                      subpoenaType === 'JPN'
-                        ? 'bg-emerald-950/40 border-emerald-500 text-white'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <FileCheck2 className="w-4 h-4 shrink-0 text-emerald-400 mt-0.5" />
-                    <div>
-                      <span className="font-bold block">Ketua Pengarah Pendaftaran Negara (JPN)</span>
-                      <span className="text-[11px] text-slate-400">
-                        Order production of original Register Book of Births (Akta 299) to conclusively settle kinship.
-                      </span>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSubpoenaType('HIGH_COURT_REGISTRAR')}
-                    className={`w-full p-3 rounded-xl border text-left text-xs transition flex items-start gap-2.5 ${
-                      subpoenaType === 'HIGH_COURT_REGISTRAR'
-                        ? 'bg-emerald-950/40 border-emerald-500 text-white'
-                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    <Scale className="w-4 h-4 shrink-0 text-indigo-400 mt-0.5" />
-                    <div>
-                      <span className="font-bold block">Timbalan Pendaftar Kanan Mahkamah Tinggi</span>
-                      <span className="text-[11px] text-slate-400">
-                        Order production of High Court PA Deposit Register Book under Section 4 Power of Attorney Act 1949.
-                      </span>
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Hearing Date</label>
-                  <input
-                    type="date"
-                    value={subpoenaHearingDate}
-                    onChange={(e) => setSubpoenaHearingDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">Court Room</label>
-                  <input
-                    type="text"
-                    value={subpoenaCourtRoom}
-                    onChange={(e) => setSubpoenaCourtRoom(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleBatchGenerateAndAttachAll}
+                disabled={isBatchGenerating || isProcessing}
+                className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs transition flex items-center gap-2 shadow-lg shadow-emerald-900/40 disabled:opacity-50"
+              >
+                {isBatchGenerating ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Batch Generating All Courts...
+                  </>
+                ) : (
+                  <>
+                    <Layers className="w-4 h-4" />
+                    Batch Produce &amp; Attach ALL Courts &amp; Cases
+                  </>
+                )}
+              </button>
 
               <button
                 type="button"
-                onClick={handleGenerateSubpoena}
-                disabled={isProcessing}
-                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/30"
+                onClick={() => setActiveSubTab('dossier_schedule')}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center gap-1.5 border border-slate-700"
               >
-                <FileText className="w-4 h-4" />
-                Generate Court Cause Paper (Borang 66)
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                View Dossier Schedule ({dossierDocuments.length})
               </button>
             </div>
           </div>
 
-          {/* Right Side: Cause Paper Preview */}
-          <div className="lg:col-span-7 bg-slate-900/90 rounded-2xl p-6 border border-slate-800 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-indigo-400" />
-                  Borang 66 Court Document Preview
-                </h4>
-                <p className="text-[11px] text-slate-400">Aturan 38 Kaedah 13 Kaedah-Kaedah Mahkamah 2012</p>
+          {/* Attached Confirmation Alert */}
+          {attachedSuccessInfo && (
+            <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/50 text-xs text-emerald-200 flex items-center justify-between gap-3 animate-fadeIn">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                <div>
+                  <span className="font-bold text-white">Document Formally Anchored to Court Evidence Dossier:</span>{' '}
+                  <span className="font-mono bg-emerald-900/60 px-2 py-0.5 rounded text-emerald-300 font-bold">
+                    {attachedSuccessInfo.exhibitNo}
+                  </span>{' '}
+                  • Certificate: <span className="font-mono text-emerald-400">{attachedSuccessInfo.certNo}</span>
+                  <div className="text-[11px] text-emerald-300/80 mt-0.5">{attachedSuccessInfo.title}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSubTab('dossier_schedule')}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold transition flex items-center gap-1 shadow shrink-0"
+              >
+                Inspect in Schedule
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Main Grid: Generator Controls & Live Cause Paper Preview */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Column: Court, Case, and Authority Target Controls */}
+            <div className="lg:col-span-5 space-y-4">
+              {/* Card 1: Court Registry Selection */}
+              <div className="bg-slate-900/90 rounded-2xl p-5 border border-slate-800 space-y-3.5 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-indigo-400" />
+                    1. Court of Judicature (Registry)
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {COURT_REGISTRY_OPTIONS.length} Registries Active
+                  </span>
+                </div>
+
+                <select
+                  value={selectedCourtId}
+                  onChange={(e) => handleCourtChange(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  {COURT_REGISTRY_OPTIONS.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.courtNameMalay} ({c.divisionMalay})
+                    </option>
+                  ))}
+                </select>
+
+                {(() => {
+                  const currentCourt = COURT_REGISTRY_OPTIONS.find((c) => c.id === selectedCourtId) || COURT_REGISTRY_OPTIONS[0];
+                  return (
+                    <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/80 text-[11px] text-slate-300 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Location &amp; State:</span>
+                        <span className="font-semibold text-white">{currentCourt.location}, {currentCourt.state}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Presiding Seal:</span>
+                        <span className="font-mono text-emerald-400 text-[10px]">{currentCourt.sealTextMalay}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400">Signing Registrar:</span>
+                        <span className="text-slate-200">{currentCourt.registrarTitleMalay}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
-              {subpoenaResult && (
-                <div className="flex items-center gap-2">
+              {/* Card 2: Court Case & Suit Selection */}
+              <div className="bg-slate-900/90 rounded-2xl p-5 border border-slate-800 space-y-3.5 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Scale className="w-4 h-4 text-emerald-400" />
+                    2. Court Case / Action Suit
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {PRESET_COURT_CASES.length} Cases Seeded
+                  </span>
+                </div>
+
+                <select
+                  value={selectedCaseId}
+                  onChange={(e) => handleCaseChange(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                >
+                  {PRESET_COURT_CASES.map((cs) => (
+                    <option key={cs.id} value={cs.id}>
+                      {cs.caseNumber}: {cs.caseTitleMalay}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="space-y-2 text-xs">
+                  <div>
+                    <span className="text-[11px] text-slate-400 block mb-1">Plaintiff (Applicant):</span>
+                    <input
+                      type="text"
+                      value={subpoenaPlaintiff}
+                      onChange={(e) => setSubpoenaPlaintiff(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div>
+                    <span className="text-[11px] text-slate-400 block mb-1">Defendants (Respondents):</span>
+                    <input
+                      type="text"
+                      value={subpoenaDefendant}
+                      onChange={(e) => setSubpoenaDefendant(e.target.value)}
+                      className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5 pt-1">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block mb-1">Hearing Date:</span>
+                      <input
+                        type="date"
+                        value={subpoenaHearingDate}
+                        onChange={(e) => setSubpoenaHearingDate(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-slate-400 block mb-1">Court Room:</span>
+                      <input
+                        type="text"
+                        value={subpoenaCourtRoom}
+                        onChange={(e) => setSubpoenaCourtRoom(e.target.value)}
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Target Government Authority & Evidentiary Registers */}
+              <div className="bg-slate-900/90 rounded-2xl p-5 border border-slate-800 space-y-3.5 shadow-lg">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <FileCheck2 className="w-4 h-4 text-amber-400" />
+                    3. Target Statutory Authority
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">
+                    {SUBPOENA_TARGET_OPTIONS.length} Authorities
+                  </span>
+                </div>
+
+                <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
+                  {SUBPOENA_TARGET_OPTIONS.map((tgt) => {
+                    const isSelected = selectedSubpoenaTarget === tgt.id;
+                    return (
+                      <button
+                        key={tgt.id}
+                        type="button"
+                        onClick={() => setSelectedSubpoenaTarget(tgt.id)}
+                        className={`w-full p-3 rounded-xl border text-left text-xs transition flex items-start gap-2.5 ${
+                          isSelected
+                            ? 'bg-emerald-950/40 border-emerald-500 text-white shadow-sm'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {tgt.id.includes('JPN') && <FileCheck2 className="w-4 h-4 text-emerald-400" />}
+                          {tgt.id.includes('MAHKAMAH') && <Scale className="w-4 h-4 text-indigo-400" />}
+                          {tgt.id.includes('SSM') && <Building2 className="w-4 h-4 text-amber-400" />}
+                          {tgt.id.includes('TANAH') && <Database className="w-4 h-4 text-cyan-400" />}
+                          {tgt.id.includes('LHDN') && <Stamp className="w-4 h-4 text-rose-400" />}
+                          {tgt.id.includes('BANK') && <ShieldCheck className="w-4 h-4 text-blue-400" />}
+                          {tgt.id.includes('KIMIA') && <Sparkles className="w-4 h-4 text-purple-400" />}
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-bold block truncate text-slate-100">{tgt.targetOfficialTitleMalay}</span>
+                          <span className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">
+                            {tgt.statutoryRuleMalay}: {tgt.defaultDocumentsMalay[0]}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Auto-attach Checkbox & Primary Action */}
+                <div className="pt-2 space-y-3">
+                  <label className="flex items-center gap-2.5 text-xs text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={subpoenaAutoAttach}
+                      onChange={(e) => setSubpoenaAutoAttach(e.target.checked)}
+                      className="w-4 h-4 rounded bg-slate-950 border-slate-700 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span>Automatically attach produced cause paper to Evidence Dossier schedule</span>
+                  </label>
+
                   <button
-                    onClick={() => copyToClipboard(subpoenaResult.formattedLegalNoticeMalay, 'subpoena_text')}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1.5"
+                    type="button"
+                    onClick={() => handleGenerateSubpoena()}
+                    disabled={isProcessing}
+                    className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 disabled:opacity-50"
                   >
-                    <Copy className="w-3 h-3" />
-                    {copiedKey === 'subpoena_text' ? 'Copied' : 'Copy Text'}
-                  </button>
-                  <button
-                    onClick={handleDownloadSubpoenaPdf}
-                    className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow"
-                  >
-                    <Download className="w-3 h-3" />
-                    Export Court PDF
+                    {isProcessing ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Generating Statutory Cause Paper...
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-4 h-4" />
+                        Generate &amp; Produce Cause Paper (Borang 66)
+                      </>
+                    )}
                   </button>
                 </div>
-              )}
+              </div>
             </div>
 
-            {subpoenaResult ? (
-              <div className="space-y-3">
-                <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 text-slate-300 font-mono text-[11px] leading-relaxed max-h-[480px] overflow-y-auto whitespace-pre-wrap">
-                  {subpoenaResult.formattedLegalNoticeMalay}
+            {/* Right Column: High Court Cause Paper Preview (Borang 66) */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="bg-slate-900/90 rounded-2xl p-6 border border-slate-800 space-y-4 shadow-xl">
+                {/* Header with Title and Language Selector */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                  <div>
+                    <h4 className="text-base font-bold text-white flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-indigo-400" />
+                      Borang 66 Statutory Court Document Preview
+                    </h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Aturan 38 Kaedah 13 Kaedah-Kaedah Mahkamah 2012 • Form 66 Subpoena Duces Tecum
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {/* Language Switch */}
+                    <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setSubpoenaLanguage('malay')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-bold transition ${
+                          subpoenaLanguage === 'malay'
+                            ? 'bg-indigo-600 text-white shadow'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        Bahasa Malaysia (Official)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSubpoenaLanguage('english')}
+                        className={`px-2.5 py-1 rounded text-[11px] font-bold transition ${
+                          subpoenaLanguage === 'english'
+                            ? 'bg-indigo-600 text-white shadow'
+                            : 'text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        English Translation
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 text-[10px] text-slate-400 flex items-center justify-between">
-                  <span>Prescribed Format: P.U.(A) 205/2012 Form 66</span>
-                  <span className="text-emerald-400 font-mono font-semibold">Penal Notice Incorporated</span>
-                </div>
+
+                {/* Subpoena Result Actions Toolbar */}
+                {subpoenaResult && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-mono font-bold">
+                        SHA-256: {subpoenaResult.documentSha256 ? `${subpoenaResult.documentSha256.substring(0, 10)}...` : 'VERIFIED'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-mono font-bold">
+                        Exhibit Ref: {subpoenaResult.exhibitNumberProposal || 'EXHIBIT C-SUB'}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAttachProducedSubpoena}
+                        disabled={isAttachingSubpoena}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow"
+                      >
+                        {isAttachingSubpoena ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                        )}
+                        Attach to Dossier
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyToClipboard(
+                            subpoenaLanguage === 'malay'
+                              ? subpoenaResult.formattedLegalNoticeMalay
+                              : subpoenaResult.formattedLegalNoticeEnglish,
+                            'subpoena_text'
+                          )
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition flex items-center gap-1.5 border border-slate-700"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        {copiedKey === 'subpoena_text' ? 'Copied' : 'Copy Cause Paper'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadSubpoenaPdf}
+                        className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        Export Court PDF
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Live Formatted Legal Text Box */}
+                {subpoenaResult ? (
+                  <div className="space-y-3">
+                    <div className="p-5 rounded-xl bg-slate-950 border border-slate-800 text-slate-200 font-mono text-[11px] leading-relaxed max-h-[580px] overflow-y-auto whitespace-pre-wrap select-text shadow-inner">
+                      {subpoenaLanguage === 'malay'
+                        ? subpoenaResult.formattedLegalNoticeMalay
+                        : subpoenaResult.formattedLegalNoticeEnglish}
+                    </div>
+
+                    <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Scale className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span>Prescribed Statutory Instrument: P.U.(A) 205/2012 Form 66</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-emerald-400 font-mono font-semibold">Penal Committal Notice Enforced</span>
+                        <span>•</span>
+                        <span className="text-slate-400">Order 52 Contempt</span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-16 text-center rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
+                    <Scale className="w-12 h-12 text-slate-600 mx-auto" />
+                    <h5 className="text-sm font-bold text-white">No Cause Paper Generated Yet</h5>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                      Select your Court of Judicature, Case Action, and Target Statutory Authority on the left, then click <strong>&quot;Generate &amp; Produce Cause Paper (Borang 66)&quot;</strong> to generate and anchor the sealed Subpoena Duces Tecum directly into the Court Evidence Dossier.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleGenerateSubpoena(true)}
+                      className="mt-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition inline-flex items-center gap-2 shadow"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Generate Sample Subpoena (High Court KL - JPN)
+                    </button>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="p-16 text-center rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-2">
-                <Scale className="w-8 h-8 text-slate-600 mx-auto" />
-                <p className="text-xs text-slate-400">
-                  Select the authority and click &quot;Generate Court Cause Paper&quot; to format the statutory subpoena.
-                </p>
-              </div>
-            )}
+            </div>
           </div>
         </div>
       )}
