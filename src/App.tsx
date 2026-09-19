@@ -63,6 +63,7 @@ import { DataRetrievalTechnicalWindow } from './components/DataRetrievalTechnica
 import { EnterpriseGenAiMcpConsole } from './components/EnterpriseGenAiMcpConsole';
 import { OsintMultiAgentPipelineView } from './components/OsintMultiAgentPipelineView';
 import { SovereignOsintEngineView } from './components/SovereignOsintEngineView';
+import { CaseStudy100DossierView } from './components/CaseStudy100DossierView';
 
 const DEFAULT_FALLBACK_CONFIG: SanitizedConfigReport = {
   timestamp: new Date().toISOString(),
@@ -131,8 +132,8 @@ const DEFAULT_FALLBACK_CONFIG: SanitizedConfigReport = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<
-    'osint_multi_agent' | 'enterprise_mcp' | 'real_extracts' | 'strategic_integrations' | 'brain_ai_correction' | 'poa_master_dossier' | 'court_ready_pdf_exporter' | 'probate_court_dna' | 'crawler_retrieval' | 'veridian_swift' | 'case_dispute' | 'media_ai' | 'mcp' | 'icij' | 'skills' | 'verify' | 'dossier' | 'account' | 'test' | 'config' | 'audit' | 'env_guide'
-  >('osint_multi_agent');
+    'case_study_100' | 'osint_multi_agent' | 'enterprise_mcp' | 'real_extracts' | 'strategic_integrations' | 'brain_ai_correction' | 'poa_master_dossier' | 'court_ready_pdf_exporter' | 'probate_court_dna' | 'crawler_retrieval' | 'veridian_swift' | 'case_dispute' | 'media_ai' | 'mcp' | 'icij' | 'skills' | 'verify' | 'dossier' | 'account' | 'test' | 'config' | 'audit' | 'env_guide'
+  >('case_study_100');
   const [showTechnicalSpecWindow, setShowTechnicalSpecWindow] = useState(false);
   const [selectedMediaTriggerId, setSelectedMediaTriggerId] = useState<string | undefined>(undefined);
   const [officerAccount, setOfficerAccount] = useState<OfficerAccount | null>(null);
@@ -472,6 +473,21 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
           </button>
 
           <button
+            onClick={() => setActiveTab('case_study_100')}
+            className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
+              activeTab === 'case_study_100'
+                ? 'border-amber-500 text-amber-300 bg-amber-950/60 shadow-sm'
+                : 'border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-700'
+            }`}
+          >
+            <Scale className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+            100+ PDF Case Study
+            <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-mono font-bold">
+              105 Exhibits • PDF
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('osint_multi_agent')}
             className={`flex items-center gap-2 px-4 py-2.5 text-xs font-semibold tracking-wide border-b-2 whitespace-nowrap transition ${
               activeTab === 'osint_multi_agent'
@@ -798,6 +814,11 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
         {/* TAB: SOVEREIGN OSINT MULTI-AGENT ENGINE (v4.8 PROD) */}
         {activeTab === 'sovereign_osint' && (
           <SovereignOsintEngineView onNavigateTab={(tab) => setActiveTab(tab)} />
+        )}
+
+        {/* TAB: 100+ SECTION MASTER FORENSIC CASE STUDY & EVIDENTIARY DOSSIER */}
+        {activeTab === 'case_study_100' && (
+          <CaseStudy100DossierView />
         )}
 
         {/* TAB: PRODUCTION-GRADE OSINT MULTI-AGENT ARCHITECTURE (31 MCP TOOLS & 6-AGENT DAG) */}

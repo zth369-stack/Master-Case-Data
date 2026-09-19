@@ -1,6 +1,6 @@
 {
   "name": "SSM Middleware",
-  "description": "Production-Grade OSINT Multi-Agent Architecture for Sovereign, Corporate & Cross-Border Estate Investigations with 31 MCP Tools across 6 specialized servers, 6-agent stateful DAG orchestration, Hybrid Graph RAG, VLM forensic layout parsing, criminal fraud audit, Evidence Act 1950 S.90A certification, and Digital Signature Act 1997 SHA-256 provenance.",
+  "description": "Production-Grade OSINT Multi-Agent Architecture for Sovereign, Corporate & Cross-Border Estate Investigations with 31 MCP Tools across 6 specialized servers, 6-agent stateful DAG orchestration, 100+ Section Master PDF Case Study & Judicial Dossier with 105 verified exhibits, Hybrid Graph RAG, criminal fraud audit, Evidence Act 1950 S.90A certification, and Digital Signature Act 1997 SHA-256 provenance.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
