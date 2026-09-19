@@ -530,9 +530,10 @@ Provide an exhaustive, authoritative legal & evidentiary analysis covering:
           'Assist Bukit Aman Commercial Crime Investigation Department (CCID) in the ongoing criminal trial (CC-62-441-2026) regarding the forged AmBank credit trace and codicil.',
         ],
       };
-    } catch {
-      // Fall through to deterministic engine
     }
+  } catch {
+    // Fall through to deterministic engine
+  }
   }
 
   // Deterministic Grounded Analysis Engine

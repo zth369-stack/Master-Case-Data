@@ -620,9 +620,10 @@ Keep the style sophisticated, objective, and legally rigorous.`;
           },
         ],
       };
-    } catch (err) {
-      console.warn('Gemini API call encountered error, falling back to rich evidentiary simulation:', err);
     }
+  } catch (err) {
+    console.warn('Gemini API call encountered error, falling back to rich evidentiary simulation:', err);
+  }
   }
 
   // Fallback to rich, authentic evidentiary simulation (guaranteed high fidelity even if API key not present)

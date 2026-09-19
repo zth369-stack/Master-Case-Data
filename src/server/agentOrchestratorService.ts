@@ -89,22 +89,29 @@ export class MCPClientManager {
     // 2. Direct internal mediation via integrated MCP tool handlers
     const toolKey = endpointOrTool.toLowerCase();
     try {
+      // Check if endpointOrTool matches an exact MCP tool name
+      const exactTool = MCP_TOOLS.find((t) => t.name.toLowerCase() === toolKey);
+      if (exactTool) {
+        const res = await handleMcpToolCall(exactTool.name, payload as Record<string, any>);
+        return { source: `MCP Tool: ${exactTool.name}`, result: res };
+      }
+
       if (toolKey.includes('court') || toolKey.includes('opinion') || toolKey.includes('docket')) {
         const res = await handleMcpToolCall('courtlistener_search_opinions', { query });
         return { source: 'CourtListener RECAP MCP', result: res };
       }
-      if (toolKey.includes('ssm') || toolKey.includes('mygdx') || toolKey.includes('company')) {
-        const res = await handleMcpToolCall('ssm_query_company_status', { registrationNumber: '1199837-7' });
+      if (toolKey.includes('ssm') || toolKey.includes('mygdx') || toolKey.includes('company') || toolKey.includes('roc')) {
+        const res = await handleMcpToolCall('mygdx_ssm_query_roc', { registration_number: '1199837-7', include_directors: true });
         return { source: 'MyGDX SSM Gateway MCP', result: res };
       }
-      if (toolKey.includes('icij') || toolKey.includes('offshore') || toolKey.includes('trace')) {
-        const res = await handleMcpToolCall('icij_offshore_search', { query });
+      if (toolKey.includes('icij') || toolKey.includes('offshore') || toolKey.includes('trace') || toolKey.includes('reconcile')) {
+        const res = await handleMcpToolCall('icij_offshore_reconcile_entity', { query, type: 'Entity' });
         return { source: 'ICIJ Offshore Leaks MCP', result: res };
       }
-      if (toolKey.includes('legal') || toolKey.includes('statute') || toolKey.includes('precedent')) {
-        const res = await handleMcpToolCall('legalai_statutory_reference', {
-          actName: 'Evidence Act 1950',
-          section: 'Section 90A',
+      if (toolKey.includes('legal') || toolKey.includes('statute') || toolKey.includes('precedent') || toolKey.includes('cause')) {
+        const res = await handleMcpToolCall('legalai_my_verify_cause_papers', {
+          suit_number: 'WA-22NCC-482-09/2026',
+          court_division: 'Commercial Division',
         });
         return { source: 'LegalAI Statutory MCP', result: res };
       }
@@ -317,11 +324,11 @@ router.post('/api/v1/agent/execute', async (req: Request, res: Response) => {
     await new Promise((r) => setTimeout(r, 20));
   }
 
-  // If Gemini available, stream directly from Gemini 2.5 Flash
+  // If Gemini available, stream directly from Gemini 3.8 Flash
   if (ai) {
     try {
       const stream = await ai.models.generateContentStream({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.8-flash',
         contents: \`Context: \${JSON.stringify(contextAggregations)}\\n\\nUser Task: \${prompt}\`,
       });
       for await (const chunk of stream) {
@@ -590,10 +597,10 @@ export async function executeAgentWorkflowStream(payload: QueryPayload, res: Ser
     const ai = getGenAiClient();
 
     if (ai) {
-      sendEvent(`[GEMINI 2.5 FLASH] Connected. Synthesizing live model-context response:\n\n`);
+      sendEvent(`[GEMINI 3.8 FLASH] Connected. Synthesizing live model-context response:\n\n`);
       try {
         const stream = await ai.models.generateContentStream({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
           contents: `You are the enterprise orchestrator of this application.
 The user provided the following input:
 "${prompt}"

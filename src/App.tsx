@@ -301,6 +301,62 @@ export default function App() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+
+  const handleExportAuditCsv = () => {
+    if (auditLogs.length === 0) return;
+
+    const headers = [
+      'Log ID',
+      'Timestamp (ISO)',
+      'Timestamp (Formatted)',
+      'Agency Code',
+      'Restricted Endpoint',
+      'Query Param',
+      'HMAC Integrity',
+      'HTTP Status',
+      'Status Text',
+      'Duration (ms)',
+    ];
+
+    const escapeCsv = (val: string | number | boolean | null | undefined): string => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const rows = auditLogs.map((log) =>
+      [
+        escapeCsv(log.id),
+        escapeCsv(log.timestamp),
+        escapeCsv(new Date(log.timestamp).toLocaleString()),
+        escapeCsv(log.agencyCode),
+        escapeCsv(log.endpoint),
+        escapeCsv(log.queryParam),
+        escapeCsv(log.hmacVerified ? 'VERIFIED' : 'FAILED'),
+        escapeCsv(log.httpStatus),
+        escapeCsv(log.statusText),
+        escapeCsv(log.durationMs),
+      ].join(',')
+    );
+
+    // Prefix with UTF-8 Byte Order Mark (\uFEFF) for Excel compatibility
+    const csvContent = '\uFEFF' + [headers.map((h) => `"${h}"`).join(','), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    const timestampStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    link.setAttribute('download', `ssm-mygdx-audit-trail-${timestampStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setExportFeedback(`Exported ${auditLogs.length} audit records to CSV.`);
+    setTimeout(() => setExportFeedback(null), 3000);
+  };
+
   const envSample = `# Malaysian Government Central Data Exchange (MyGDX) Configuration
 MYGDX_GATEWAY_URL="${configReport?.mygdx.gatewayUrl || 'https://sandbox.mygdx.gov.my'}"
 MYGDX_CONSUMER_KEY="<YOUR_MAMPU_MYGDX_CONSUMER_KEY>"
@@ -1619,7 +1675,7 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
         {activeTab === 'audit' && (
           <div className="space-y-6">
             <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                     <Clock className="w-4 h-4 text-blue-400" />
@@ -1629,12 +1685,34 @@ MIDDLEWARE_AUDIT_LOG_ENABLED="true"`;
                     Immutable ring buffer recording all transactions dispatched through this SSM middleware.
                   </p>
                 </div>
-                <button
-                  onClick={fetchStatus}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 font-medium transition"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh Logs
-                </button>
+                <div className="flex items-center gap-2">
+                  {exportFeedback && (
+                    <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1 mr-1">
+                      <Check className="w-3.5 h-3.5" />
+                      {exportFeedback}
+                    </span>
+                  )}
+                  <button
+                    id="export-audit-csv-btn"
+                    onClick={handleExportAuditCsv}
+                    disabled={auditLogs.length === 0}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-slate-800 disabled:cursor-not-allowed border border-blue-500 text-white font-medium transition shadow-sm"
+                    title={
+                      auditLogs.length === 0
+                        ? 'No audit log entries available to export'
+                        : `Export ${auditLogs.length} audit entries as CSV for offline compliance reporting`
+                    }
+                  >
+                    <Download className="w-3.5 h-3.5" /> Export as CSV
+                  </button>
+                  <button
+                    id="refresh-audit-logs-btn"
+                    onClick={fetchStatus}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-slate-800 border border-slate-700 hover:bg-slate-700 text-slate-200 font-medium transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" /> Refresh Logs
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">

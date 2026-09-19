@@ -18,8 +18,17 @@ import {
   ArrowRightLeft,
   Sparkles,
   AlertCircle,
+  Clock,
+  CheckCircle2,
+  ChevronDown,
+  ChevronRight,
+  Brain,
+  Sliders,
+  Settings2,
 } from 'lucide-react';
 import type { TargetAppFormat } from '../server/agentOrchestratorService';
+import { AiCodeWorkbench } from './AiCodeWorkbench';
+import { McpToolsTester } from './McpToolsTester';
 
 interface TelemetryLog {
   id: string;
@@ -29,6 +38,43 @@ interface TelemetryLog {
   event: string;
   raw: string;
 }
+
+interface ToolCallLogEntry {
+  toolName: string;
+  args: Record<string, unknown>;
+  timestamp: string;
+  durationMs: number;
+  status: 'SUCCESS' | 'ERROR';
+  resultPreview: string;
+  fullResult?: any;
+}
+
+interface AutonomousAgentResponse {
+  text: string;
+  modelUsed: string;
+  toolCallsExecuted: ToolCallLogEntry[];
+  totalTurns: number;
+  durationMs: number;
+  codeBlocks?: Array<{ language: string; code: string; title?: string }>;
+}
+
+const AUTONOMOUS_PRESETS = [
+  {
+    label: '2017 Geneva Veridian Settlement Forensic Audit',
+    prompt:
+      'Investigate the 2017 Geneva Veridian settlement for Kavinath A/L Ganesan (960906085839). Query CourtListener for relevant dockets and opinions, reconcile corporate entities in SSM, and generate an Evidence Act 1950 Section 90A tamper-evident certificate in TypeScript.',
+  },
+  {
+    label: 'SSM & ICIJ Offshore Asset Tracing',
+    prompt:
+      'Reconcile Kavinath Holdings Sdn. Bhd. (SSM 1199837-7) with ICIJ Offshore Leaks for Archon Holdings SA and Veridian Trust. Check director disqualification status for Suresh Kumar A/L Balakrishnan and produce a SWIFT MT103 wire validator script.',
+  },
+  {
+    label: 'High Court Malaya Cause Paper Verification',
+    prompt:
+      'Audit Commercial Division Suit WA-22NCC-482-09/2026 under Malaysian Evidence Act Section 90A and Rules of Court 2012 Form 66. Write a production TypeScript MyGDX HMAC-SHA256 request signer.',
+  },
+];
 
 const PRESET_INPUTS: { label: string; format: TargetAppFormat; icon: React.ReactNode; text: string }[] = [
   {
@@ -49,14 +95,14 @@ async def execute_agent_workflow(payload: QueryPayload):
     return StreamingResponse(event_generator(), media_type="text/event-stream")`,
   },
   {
-    label: 'Unstructured Court Testimony',
-    format: 'FORM_66_SUBPOENA',
+    label: 'Court Docket / RECAP Opinion',
+    format: 'COURT_JUDICIAL_DOCKET',
     icon: <FileText className="w-3.5 h-3.5 text-amber-400" />,
-    text: `Witness states that on 14 January 2024, Suresh Kumar A/L Balakrishnan (Proxy X) claimed he obtained 5,100,000 shares in Veridian Nexus Holdings Sdn. Bhd. for MYR 1.00 consideration via forged Form 32A while principal was overseas in London. Requesting production of original share registry minute books and RHB joint account records for Suit WA-22NCC-482-09/2026.`,
+    text: `OPINION FILED: In the High Court of Malaya at Kuala Lumpur, Commercial Division. Suit No. WA-22NCC-482-09/2026. Plaintiff: Kavinath A/L Ganesan vs Defendant: Nominee Suresh Kumar. Ruling on interlocutory injunction regarding USD 35M Veridian escrow proceeds. Found that Evidence Act 1950 Section 90A certificate strictly satisfies burden of electronic record integrity.`,
   },
   {
-    label: 'Raw SWIFT Banking Memo',
-    format: 'SECTION_90A_CERT',
+    label: 'SWIFT MT103 Wire Audit',
+    format: 'EVIDENCE_DOSSIER_EXHIBIT',
     icon: <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />,
     text: `SWIFT MT103 LOG: SENDER: LOMBARD ODIER GENEVA (SWISS PRIV BANK) BIC: LOCHCHGGXXX // FIELD 20: TR-2024-990812 // FIELD 32A: 240315USD35000000,00 // FIELD 50K: ARCHON HOLDINGS SA // FIELD 59: KAVINATH GANESAN MAYBANK KL ACC 5140-1289-4410 // DISPUTE: ROGUE MT199 DIVERSION ATTEMPT BY NOMINEE S.KUMAR INTERCEPTED.`,
   },
@@ -77,7 +123,19 @@ async def execute_agent_workflow(payload: QueryPayload):
 ];
 
 export const EnterpriseGenAiMcpConsole: React.FC = () => {
-  const [prompt, setPrompt] = useState<string>(PRESET_INPUTS[0].text);
+  const [activeTab, setActiveTab] = useState<'autonomous' | 'codes' | 'mcp_tester' | 'stream'>('autonomous');
+
+  // Autonomous Agent State
+  const [agentPrompt, setAgentPrompt] = useState<string>(AUTONOMOUS_PRESETS[0].prompt);
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.8-flash');
+  const [thinkingLevel, setThinkingLevel] = useState<'HIGH' | 'LOW'>('HIGH');
+  const [enableMcpTools, setEnableMcpTools] = useState<boolean>(true);
+  const [isAgentExecuting, setIsAgentExecuting] = useState<boolean>(false);
+  const [agentResponse, setAgentResponse] = useState<AutonomousAgentResponse | null>(null);
+  const [expandedToolIndex, setExpandedToolIndex] = useState<number | null>(null);
+
+  // SSE Stream State
+  const [streamPrompt, setStreamPrompt] = useState<string>(PRESET_INPUTS[0].text);
   const [targetFormat, setTargetFormat] = useState<TargetAppFormat>('AUTO');
   const [selectedServers, setSelectedServers] = useState<string[]>([
     'http://localhost:3000/mcp',
@@ -87,7 +145,7 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
   ]);
   const [serverInput, setServerInput] = useState('');
   const [streamingOutput, setStreamingOutput] = useState('');
-  const [isExecuting, setIsExecuting] = useState(false);
+  const [isExecutingStream, setIsExecutingStream] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [telemetryLogs, setTelemetryLogs] = useState<TelemetryLog[]>([]);
   const [copied, setCopied] = useState(false);
@@ -151,12 +209,46 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
     }
   }, [streamingOutput]);
 
-  // Execute Agent Pipeline via Server-Sent Events (SSE)
-  const handleExecution = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!prompt.trim() || isExecuting) return;
+  // Execute Autonomous Agent
+  const handleRunAutonomousAgent = async () => {
+    if (!agentPrompt.trim() || isAgentExecuting) return;
 
-    setIsExecuting(true);
+    setIsAgentExecuting(true);
+    setAgentResponse(null);
+    setExpandedToolIndex(null);
+    setDossierAttached(null);
+
+    try {
+      const res = await fetch('/api/v1/ai/agent/autonomous', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: agentPrompt,
+          model: selectedModel,
+          thinkingLevel,
+          enableMcpTools,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        setAgentResponse(data.data);
+      } else {
+        alert(`Autonomous agent error: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err: any) {
+      alert(`Network error: ${err.message}`);
+    } finally {
+      setIsAgentExecuting(false);
+    }
+  };
+
+  // Execute SSE Stream Pipeline
+  const handleExecutionStream = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!streamPrompt.trim() || isExecutingStream) return;
+
+    setIsExecutingStream(true);
     setStreamingOutput('');
     setDossierAttached(null);
     setTokenCount(0);
@@ -169,7 +261,7 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt,
+          prompt: streamPrompt,
           session_id: `sess-enterprise-${Math.floor(10 + Math.random() * 90)}`,
           mcp_servers: selectedServers,
           target_format: targetFormat,
@@ -200,82 +292,51 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (trimmed.startsWith('data: ')) {
-            const payload = trimmed.slice(6).trim();
-            if (payload === '[DONE]') {
-              setIsExecuting(false);
-              return;
+          if (!trimmed.startsWith('data:')) continue;
+          const dataContent = trimmed.substring(5).trim();
+          if (dataContent === '[DONE]') break;
+
+          try {
+            const parsed = JSON.parse(dataContent);
+            if (parsed.token) {
+              setStreamingOutput((prev) => prev + parsed.token);
+              count++;
+              setTokenCount(count);
             }
-            try {
-              const parsed = JSON.parse(payload);
-              if (parsed.token) {
-                count++;
-                setTokenCount(count);
-                setStreamingOutput((prev) => prev + parsed.token);
-              }
-            } catch {
-              // Non-JSON plain payload
-              setStreamingOutput((prev) => prev + payload);
-            }
+          } catch {
+            // Raw text fallback
+            setStreamingOutput((prev) => prev + dataContent);
           }
         }
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        setStreamingOutput((prev) => `${prev}\n\n[EXECUTION ERROR]: ${err.message || 'Stream connection interrupted'}`);
+        setStreamingOutput((prev) => prev + `\n[Stream Error: ${err.message}]`);
       }
     } finally {
-      setIsExecuting(false);
+      setIsExecutingStream(false);
       abortControllerRef.current = null;
     }
   };
 
-  // Instant non-streaming conversion
-  const handleDirectConvert = async () => {
-    if (!prompt.trim() || isExecuting) return;
-    setIsExecuting(true);
-    setDossierAttached(null);
-    try {
-      const res = await fetch('/api/v1/agent/convert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: prompt,
-          targetFormat,
-        }),
-      });
-      const json = await res.json();
-      if (json.success && json.data) {
-        setStreamingOutput(json.data.rewritten);
-        setTokenCount(json.data.rewritten.split(/\s+/).length);
-      }
-    } catch (err: any) {
-      setStreamingOutput(`[CONVERT ERROR]: ${err.message}`);
-    } finally {
-      setIsExecuting(false);
-    }
-  };
-
-  // Copy output
-  const handleCopy = () => {
-    if (!streamingOutput) return;
-    navigator.clipboard.writeText(streamingOutput);
+  const handleCopy = (text: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // Attach directly to Evidence Dossier
-  const handleAttachToDossier = async () => {
-    if (!streamingOutput || isAttaching) return;
+  const handleAttachToDossier = async (content: string, title: string, tag: string) => {
+    if (!content || isAttaching) return;
     setIsAttaching(true);
     try {
       const res = await fetch('/api/v1/agent/attach-to-dossier', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: `Universal Rewritten Exhibit (${targetFormat})`,
-          content: streamingOutput,
-          formatTag: targetFormat,
+          title: `${title} (${new Date().toLocaleDateString()})`,
+          content,
+          formatTag: tag,
         }),
       });
       const data = await res.json();
@@ -283,234 +344,447 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
         setDossierAttached(data.data?.document?.serialOrRegistrationNo || 'SEALED & ATTACHED');
       }
     } catch (err: any) {
-      alert(`Attachment failed: ${err.message}`);
+      alert(`Failed to attach to dossier: ${err.message}`);
     } finally {
       setIsAttaching(false);
     }
   };
 
-  const addCustomServer = () => {
-    if (!serverInput.trim()) return;
-    if (!selectedServers.includes(serverInput.trim())) {
-      setSelectedServers([...selectedServers, serverInput.trim()]);
-    }
-    setServerInput('');
-  };
-
-  const removeServer = (srv: string) => {
-    setSelectedServers(selectedServers.filter((s) => s !== srv));
-  };
-
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-5">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
-                <Cpu className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <h1 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
-                  Enterprise GenAI &amp; MCP Orchestrator
-                  <span className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                    v2.0.0 Microservice
-                  </span>
+      {/* Top Banner & Mode Navigation Bar */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+              <Brain className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-bold text-white tracking-tight">
+                  Enterprise GenAI Orchestrator &amp; MCP Integration Suite
                 </h1>
-                <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                  Universal Anything-to-Anything Rewriter, Model Context Protocol (MCP) Bridge &amp; Real-Time SSE Token Stream
-                </p>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  +mcp +ai +codes
+                </span>
               </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Autonomous Gemini Function Calling, 13 Model Context Protocol tools, and TypeScript statutory code synthesizer.
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs">
-              <span className={`h-2.5 w-2.5 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-              <span className="font-mono text-slate-300">
-                {isConnected ? 'Telemetry Online (Active)' : 'Telemetry Reconnecting...'}
-              </span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-300">
+              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              <span className="font-medium">{isConnected ? 'MCP Gateway Connected' : 'Connecting...'}</span>
             </div>
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-slate-400 font-mono">
-              <Server className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Port 3000 Ingress</span>
+
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setActiveTab('autonomous')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                  activeTab === 'autonomous'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Autonomous Agent</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('codes')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                  activeTab === 'codes'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Code2 className="w-3.5 h-3.5" />
+                <span>AI Code Workbench (+codes)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('mcp_tester')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                  activeTab === 'mcp_tester'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <Cpu className="w-3.5 h-3.5" />
+                <span>MCP Tools (13)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab('stream')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+                  activeTab === 'stream'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>Universal Rewriter (SSE)</span>
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Quick Ingestion Presets: "Convert Anything" */}
-        <div className="mt-4 pt-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 mb-2">
-            <ArrowRightLeft className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Universal Input Presets (Click to load arbitrary payload):</span>
+        {/* Dynamic Sub-header Info based on active tab */}
+        <div className="pt-3 flex items-center justify-between text-xs text-slate-400">
+          <div className="flex items-center gap-4 flex-wrap">
+            <span>
+              Primary Model: <strong className="text-indigo-300 font-mono">gemini-3.8-flash</strong>
+            </span>
+            <span>•</span>
+            <span>
+              SDK Engine: <strong className="text-slate-200">@google/genai (v2.4.0)</strong>
+            </span>
+            <span>•</span>
+            <span>
+              Statutory Custody: <strong className="text-emerald-400">Evidence Act 1950 S.90A</strong>
+            </span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-            {PRESET_INPUTS.map((item, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => {
-                  setPrompt(item.text);
-                  setTargetFormat(item.format);
-                }}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-950/80 hover:bg-slate-800/80 border border-slate-800 text-left transition group text-xs"
-              >
-                {item.icon}
-                <div className="truncate">
-                  <span className="font-medium text-slate-200 block truncate group-hover:text-white">
-                    {item.label}
-                  </span>
-                  <span className="text-[10px] text-slate-500 block truncate font-mono">
-                    Target: {item.format}
-                  </span>
-                </div>
-              </button>
-            ))}
+
+          <div className="text-[11px] font-mono text-slate-500 hidden sm:block">
+            Transport: Internal JSON-RPC 2.0 &amp; SSE Stream
           </div>
         </div>
       </div>
 
-      {/* Main Two-Column Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column (2 Cols): Form, Target Format & Streaming Execution */}
-        <div className="lg:col-span-2 space-y-6">
-          <form onSubmit={handleExecution} className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5 text-indigo-400" />
-                Input Payload (Whatever Format Given)
-              </label>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-400">Target App Format:</span>
+      {/* TAB 1: Autonomous GenAI Agent */}
+      {activeTab === 'autonomous' && (
+        <div className="space-y-6">
+          {/* Agent Configuration and Prompt Panel */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Autonomous Multi-Turn Agent with Native MCP Tool Calling
+                </h3>
+              </div>
+
+              {/* Model & Thinking Controls */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs">
+                  <span className="text-slate-400 text-[11px]">Model:</span>
+                  <select
+                    value={selectedModel}
+                    onChange={(e) => setSelectedModel(e.target.value)}
+                    className="bg-transparent text-indigo-300 font-mono text-xs outline-none cursor-pointer"
+                  >
+                    <option value="gemini-3.8-flash">gemini-3.8-flash (Recommended)</option>
+                    <option value="gemini-flash-latest">gemini-flash-latest</option>
+                    <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite</option>
+                    <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Deep)</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-1 bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs">
+                  <span className="text-slate-400 text-[11px]">Thinking:</span>
+                  <select
+                    value={thinkingLevel}
+                    onChange={(e) => setThinkingLevel(e.target.value as any)}
+                    className="bg-transparent text-emerald-300 font-mono text-xs outline-none cursor-pointer"
+                  >
+                    <option value="HIGH">HIGH (Deep Judicial Reasoning)</option>
+                    <option value="LOW">LOW (Fast Response)</option>
+                  </select>
+                </div>
+
+                <label className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-xs text-slate-300 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={enableMcpTools}
+                    onChange={(e) => setEnableMcpTools(e.target.checked)}
+                    className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0 w-3.5 h-3.5"
+                  />
+                  <span>Enable MCP Tools</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Presets */}
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <span className="text-slate-400 text-[11px] font-semibold">Quick Investigations:</span>
+              {AUTONOMOUS_PRESETS.map((p, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setAgentPrompt(p.prompt)}
+                  className="px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 text-[11px] transition truncate max-w-xs"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Prompt input */}
+            <div className="relative">
+              <textarea
+                value={agentPrompt}
+                onChange={(e) => setAgentPrompt(e.target.value)}
+                rows={3}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 text-xs font-mono outline-none focus:border-indigo-500 resize-none selection:bg-indigo-500/30"
+                placeholder="Instruct the autonomous agent with tasks, queries, or code synthesis targets..."
+              />
+              <button
+                type="button"
+                onClick={handleRunAutonomousAgent}
+                disabled={isAgentExecuting || !agentPrompt.trim()}
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition disabled:opacity-50"
+              >
+                <Play className={`w-3.5 h-3.5 ${isAgentExecuting ? 'animate-spin' : ''}`} />
+                <span>{isAgentExecuting ? 'Agent Reasoning...' : 'Run Autonomous Agent'}</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Results: Tool Execution Trace & Synthesized Output */}
+          {agentResponse ? (
+            <div className="space-y-6">
+              {/* Tool Calls Execution Trace */}
+              {agentResponse.toolCallsExecuted && agentResponse.toolCallsExecuted.length > 0 && (
+                <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-emerald-400" />
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                        Autonomous MCP Tool Invocations ({agentResponse.toolCallsExecuted.length})
+                      </h4>
+                    </div>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      Executed across {agentResponse.totalTurns} Agent Turns
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {agentResponse.toolCallsExecuted.map((toolCall, idx) => {
+                      const isExpanded = expandedToolIndex === idx;
+                      return (
+                        <div
+                          key={idx}
+                          className="bg-slate-950 border border-slate-800/90 rounded-lg overflow-hidden transition"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setExpandedToolIndex(isExpanded ? null : idx)}
+                            className="w-full px-3.5 py-2.5 flex items-center justify-between text-left hover:bg-slate-900/60 transition"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              {isExpanded ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-indigo-400" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                              )}
+                              <span className="font-mono text-xs text-indigo-300 font-semibold">
+                                {toolCall.toolName}
+                              </span>
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400 font-mono">
+                                {toolCall.durationMs}ms
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-500">{toolCall.timestamp}</span>
+                              <span
+                                className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded ${
+                                  toolCall.status === 'SUCCESS'
+                                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                    : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                                }`}
+                              >
+                                {toolCall.status}
+                              </span>
+                            </div>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="p-3 bg-slate-950/90 border-t border-slate-800/70 text-xs font-mono space-y-2">
+                              <div>
+                                <span className="text-[11px] text-slate-500 block mb-0.5">Arguments:</span>
+                                <pre className="p-2 rounded bg-slate-900 text-slate-300 text-[11px] overflow-auto">
+                                  {JSON.stringify(toolCall.args, null, 2)}
+                                </pre>
+                              </div>
+                              <div>
+                                <span className="text-[11px] text-slate-500 block mb-0.5">Full Response:</span>
+                                <pre className="p-2 rounded bg-slate-900 text-slate-300 text-[11px] max-h-56 overflow-auto">
+                                  {JSON.stringify(toolCall.fullResult || toolCall.resultPreview, null, 2)}
+                                </pre>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Synthesized Response View */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Terminal className="w-4 h-4 text-indigo-400" />
+                    <span className="text-xs font-bold text-slate-300">Grounded Agent Synthesis</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      {agentResponse.modelUsed}
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-500">
+                      {agentResponse.durationMs}ms
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleCopy(agentResponse.text)}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition"
+                    >
+                      {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copied ? 'Copied' : 'Copy'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleAttachToDossier(
+                          agentResponse.text,
+                          'Autonomous GenAI Agent Forensic Synthesis',
+                          'AGENT_SYNTHESIS'
+                        )
+                      }
+                      disabled={isAttaching}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 text-xs transition disabled:opacity-40"
+                    >
+                      <FolderPlus className="w-3.5 h-3.5" />
+                      <span>{isAttaching ? 'Attaching...' : 'Attach to Dossier'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-5 font-mono text-xs text-slate-200 leading-relaxed whitespace-pre-wrap max-h-[600px] overflow-auto bg-slate-950">
+                  {agentResponse.text}
+                </div>
+
+                {dossierAttached && (
+                  <div className="px-4 py-2.5 bg-emerald-950/40 border-t border-emerald-800/40 text-emerald-300 text-xs flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      Synthesis successfully sealed into Evidence Dossier
+                    </span>
+                    <span className="font-mono text-[11px] bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-700/50">
+                      {dossierAttached}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-900/60 border border-dashed border-slate-800 rounded-xl p-10 text-center space-y-2">
+              <Brain className="w-10 h-10 mx-auto text-slate-600" />
+              <h4 className="text-sm font-semibold text-slate-300">Autonomous Agent Ready</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                Select a preset or enter a prompt above to initiate autonomous multi-turn reasoning with live MCP tool calling and statutory code validation.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: AI Code Workbench (+codes) */}
+      {activeTab === 'codes' && <AiCodeWorkbench />}
+
+      {/* TAB 3: MCP Tools (13) */}
+      {activeTab === 'mcp_tester' && <McpToolsTester />}
+
+      {/* TAB 4: Universal Rewriter (SSE Stream) */}
+      {activeTab === 'stream' && (
+        <div className="space-y-6">
+          {/* Top Config Row */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="w-4 h-4 text-indigo-400" />
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                  Anything-to-Anything Rewriter &amp; SSE Stream
+                </h3>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Target App Format:</span>
                 <select
                   value={targetFormat}
                   onChange={(e) => setTargetFormat(e.target.value as TargetAppFormat)}
-                  className="bg-slate-950 border border-slate-700 text-indigo-300 rounded px-2.5 py-1 text-xs font-mono focus:ring-1 focus:ring-indigo-500 outline-none"
+                  className="bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-indigo-300 font-mono outline-none"
                 >
-                  <option value="AUTO">AUTO (Intelligent Detection)</option>
-                  <option value="EXPRESS_TYPESCRIPT_CODE">Node.js/Express TypeScript</option>
-                  <option value="FORM_66_SUBPOENA">Borang 66 Subpoena Duces Tecum</option>
+                  <option value="AUTO">AUTO (Detect &amp; Normalize)</option>
+                  <option value="EXPRESS_TYPESCRIPT_CODE">TypeScript Express Service Code</option>
+                  <option value="FORM_66_SUBPOENA">Court Order 38 Form 66 Subpoena</option>
                   <option value="SECTION_90A_CERT">Evidence Act S.90A Certificate</option>
-                  <option value="EVIDENCE_DOSSIER_EXHIBIT">Master Evidence Dossier Exhibit</option>
-                  <option value="MCP_JSONRPC_PACKET">JSON-RPC 2.0 Context Packet</option>
-                  <option value="SSM_MYGDX_STATUTORY">SSM MyGDX Statutory Extract</option>
-                  <option value="COURT_JUDICIAL_DOCKET">High Court Cause Paper Docket</option>
+                  <option value="COURT_JUDICIAL_DOCKET">CourtListener Judicial Docket</option>
+                  <option value="SSM_MYGDX_STATUTORY">MyGDX SSM Statutory Record</option>
+                  <option value="EVIDENCE_DOSSIER_EXHIBIT">Evidence Dossier Exhibit (SWIFT/Wire)</option>
+                  <option value="MCP_JSONRPC_PACKET">MCP JSON-RPC Packet</option>
                 </select>
               </div>
             </div>
 
-            <textarea
-              rows={7}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Paste whatever input given (Python FastAPI code, raw court pleading, SWIFT wire, JSON, or diagnostic task)..."
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-xs sm:text-sm font-mono text-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none leading-relaxed"
-            />
-
-            {/* MCP Servers Selection */}
-            <div className="space-y-1.5">
-              <label className="text-xs text-slate-400 flex items-center justify-between">
-                <span>Active Model Context Protocol (MCP) Nodes to Query:</span>
-                <span className="text-[11px] text-slate-500 font-mono">JSON-RPC 2.0 context/retrieve</span>
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedServers.map((srv, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-950 border border-slate-800 text-[11px] font-mono text-indigo-300"
-                  >
-                    <Globe className="w-3 h-3 text-indigo-400" />
-                    {srv}
-                    <button
-                      type="button"
-                      onClick={() => removeServer(srv)}
-                      className="text-slate-500 hover:text-slate-300 text-xs ml-1"
-                    >
-                      &times;
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2 pt-1">
-                <input
-                  type="text"
-                  value={serverInput}
-                  onChange={(e) => setServerInput(e.target.value)}
-                  placeholder="Add MCP Node URL (e.g. http://localhost:9001)..."
-                  className="flex-1 bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs font-mono text-slate-300 outline-none focus:border-indigo-500"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      addCustomServer();
-                    }
-                  }}
-                />
+            {/* Presets */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-400">Input Presets:</span>
+              {PRESET_INPUTS.map((p, idx) => (
                 <button
+                  key={idx}
                   type="button"
-                  onClick={addCustomServer}
-                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 font-medium"
+                  onClick={() => {
+                    setStreamPrompt(p.text);
+                    setTargetFormat(p.format);
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 text-xs transition"
                 >
-                  Add Node
+                  {p.icon}
+                  <span>{p.label}</span>
                 </button>
-              </div>
+              ))}
             </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-wrap items-center gap-3 pt-2">
+            {/* Prompt input */}
+            <form onSubmit={handleExecutionStream} className="relative">
+              <textarea
+                value={streamPrompt}
+                onChange={(e) => setStreamPrompt(e.target.value)}
+                rows={4}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 text-xs font-mono outline-none focus:border-indigo-500 resize-none selection:bg-indigo-500/30"
+                placeholder="Input any unstructured content, raw JSON, legacy code, or court ruling..."
+              />
               <button
                 type="submit"
-                disabled={isExecuting || !prompt.trim()}
-                className="flex-1 sm:flex-initial flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm transition disabled:opacity-50 shadow-md shadow-indigo-600/20"
+                disabled={isExecutingStream || !streamPrompt.trim()}
+                className="absolute bottom-3 right-3 flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition disabled:opacity-50"
               >
-                {isExecuting ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    <span>Streaming GenAI Pipeline...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>Execute Agent Pipeline (SSE Stream)</span>
-                  </>
-                )}
+                <Play className={`w-3.5 h-3.5 ${isExecutingStream ? 'animate-spin' : ''}`} />
+                <span>{isExecutingStream ? 'Streaming SSE...' : 'Stream Output'}</span>
               </button>
+            </form>
+          </div>
 
-              <button
-                type="button"
-                onClick={handleDirectConvert}
-                disabled={isExecuting || !prompt.trim()}
-                className="flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs sm:text-sm font-medium transition disabled:opacity-50"
-              >
-                <Sparkles className="w-4 h-4 text-amber-400" />
-                <span>Instant Convert &amp; Tailor</span>
-              </button>
-
-              {isExecuting && (
-                <button
-                  type="button"
-                  onClick={() => abortControllerRef.current?.abort()}
-                  className="px-3 py-2 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-800 text-rose-300 text-xs font-mono"
-                >
-                  Cancel Stream
-                </button>
-              )}
-            </div>
-          </form>
-
-          {/* Live Streaming Execution Console */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+          {/* Streaming Output Box */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm flex flex-col">
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-950 border-b border-slate-800">
               <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 relative">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isExecuting ? 'bg-emerald-400' : 'bg-slate-600'}`} />
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${isExecuting ? 'bg-emerald-500' : 'bg-slate-600'}`} />
-                </span>
-                <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Live Stream Execution Output
-                </h2>
+                <Terminal className="w-4 h-4 text-indigo-400" />
+                <span className="text-xs font-bold text-slate-300">Live SSE Stream Output</span>
                 {tokenCount > 0 && (
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 border border-emerald-800">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-400">
                     {tokenCount} tokens
                   </span>
                 )}
@@ -519,10 +793,9 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={handleCopy}
+                  onClick={() => handleCopy(streamingOutput)}
                   disabled={!streamingOutput}
                   className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition disabled:opacity-40"
-                  title="Copy output to clipboard"
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   <span>{copied ? 'Copied' : 'Copy'}</span>
@@ -530,159 +803,48 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
 
                 <button
                   type="button"
-                  onClick={handleAttachToDossier}
-                  disabled={!streamingOutput || isAttaching || !!dossierAttached}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded bg-indigo-900/60 hover:bg-indigo-800/80 border border-indigo-700/60 text-indigo-200 text-xs font-medium transition disabled:opacity-40"
-                  title="Attach rewritten output to Master Evidence Dossier"
+                  onClick={() =>
+                    handleAttachToDossier(
+                      streamingOutput,
+                      `Rewritten Exhibit: ${targetFormat}`,
+                      targetFormat
+                    )
+                  }
+                  disabled={!streamingOutput || isAttaching}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-indigo-300 text-xs transition disabled:opacity-40"
                 >
-                  <FolderPlus className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>{isAttaching ? 'Attaching...' : dossierAttached ? `Sealed (${dossierAttached})` : 'Attach to Dossier'}</span>
+                  <FolderPlus className="w-3.5 h-3.5" />
+                  <span>{isAttaching ? 'Attaching...' : 'Attach to Dossier'}</span>
                 </button>
               </div>
             </div>
 
+            <div
+              ref={outputBoxRef}
+              className="p-4 font-mono text-xs text-slate-200 leading-relaxed whitespace-pre-wrap h-96 overflow-auto bg-slate-950"
+            >
+              {streamingOutput || (
+                <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-2">
+                  <Terminal className="w-8 h-8 text-slate-600" />
+                  <p>Submit input to stream tailored output formatted for judicial compliance.</p>
+                </div>
+              )}
+            </div>
+
             {dossierAttached && (
-              <div className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-800/80 text-xs text-emerald-300 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                <span>
-                  Successfully anchored as certified exhibit in Evidence Dossier (Serial: <strong className="font-mono">{dossierAttached}</strong>). Admissible under S.90A Evidence Act 1950.
+              <div className="px-4 py-2.5 bg-emerald-950/40 border-t border-emerald-800/40 text-emerald-300 text-xs flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  Exhibit successfully sealed into Evidence Dossier
+                </span>
+                <span className="font-mono text-[11px] bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-700/50">
+                  {dossierAttached}
                 </span>
               </div>
             )}
-
-            <div
-              ref={outputBoxRef}
-              className="bg-slate-950 border border-slate-800/80 rounded-lg p-4 min-h-[220px] max-h-[500px] overflow-y-auto font-mono text-xs sm:text-sm text-emerald-400 whitespace-pre-wrap leading-relaxed select-text"
-            >
-              {streamingOutput || (
-                <span className="text-slate-600 font-sans italic">
-                  Awaiting execution payload... Select a preset above or input custom parameters and click &quot;Execute Agent Pipeline&quot;.
-                </span>
-              )}
-              {isExecuting && <span className="inline-block w-2 h-4 bg-emerald-400 animate-pulse ml-0.5 align-middle" />}
-            </div>
           </div>
         </div>
-
-        {/* Right Column (1 Col): MCP Node Telemetry, Tool Registry & Architecture State */}
-        <div className="space-y-6">
-          {/* MCP Telemetry Feed */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                MCP Node Telemetry
-              </h2>
-              <span className="text-[10px] font-mono text-slate-400">Live SSE/RPC Feed</span>
-            </div>
-
-            <div className="space-y-2 max-h-[280px] overflow-y-auto pr-1">
-              {telemetryLogs.length === 0 ? (
-                <div className="p-3 rounded bg-slate-950 text-xs text-slate-500 font-mono">
-                  Listening for node heartbeat on port 3000...
-                </div>
-              ) : (
-                telemetryLogs.map((log) => (
-                  <div key={log.id} className="bg-slate-950 border border-slate-800/80 p-2.5 rounded-lg space-y-1 text-xs font-mono">
-                    <div className="flex items-center justify-between text-[11px] text-slate-400">
-                      <span className="text-emerald-400 flex items-center gap-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 inline-block" />
-                        {log.status.toUpperCase()}
-                      </span>
-                      <span className="text-slate-500">{log.time}</span>
-                    </div>
-                    <div className="text-slate-300 text-[11px] break-all leading-tight">
-                      {log.raw}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Integrated MCP Tool Registry */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Database className="w-3.5 h-3.5 text-indigo-400" />
-                Integrated MCP Tools (4 Active)
-              </h2>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
-                <div className="flex items-center justify-between font-mono font-medium text-indigo-300">
-                  <span>courtlistener_search</span>
-                  <span className="text-[10px] text-emerald-400">4M+ Opinions</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Federal, state &amp; international judicial dockets, citations and RECAP filings.
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
-                <div className="flex items-center justify-between font-mono font-medium text-emerald-300">
-                  <span>mygdx_ssm_gateway</span>
-                  <span className="text-[10px] text-emerald-400">Companies Act 2016</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Direct statutory corporate registry &amp; beneficial ownership validation.
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
-                <div className="flex items-center justify-between font-mono font-medium text-purple-300">
-                  <span>icij_offshore_search</span>
-                  <span className="text-[10px] text-emerald-400">Offshore Leaks</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Panama/Paradise Papers and cross-border trust reconciliation.
-                </p>
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80">
-                <div className="flex items-center justify-between font-mono font-medium text-amber-300">
-                  <span>legalai_my_statutes</span>
-                  <span className="text-[10px] text-emerald-400">Act 56 / ROC 2012</span>
-                </div>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Evidence Act 1950 S.90A, Form 66 Subpoenas, and High Court precedents.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* System Architecture Verification */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 space-y-2.5 text-xs text-slate-400">
-            <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-800 pb-2">
-              <Layers className="w-3.5 h-3.5 text-blue-400" />
-              Runtime Architecture State
-            </h2>
-            <div className="space-y-1.5 font-mono text-[11px]">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Frontend Console:</span>
-                <span className="text-slate-300">React 18 + Vite + SSE</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Backend Orchestrator:</span>
-                <span className="text-slate-300">Node.js Express + TS</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">MCP Protocol Bridge:</span>
-                <span className="text-slate-300">JSON-RPC 2.0 (v2.0.0)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">GenAI Engine:</span>
-                <span className="text-indigo-300">Gemini 2.5 Flash / Fast-Path</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Statutory Certification:</span>
-                <span className="text-emerald-400">S.90A Evidence Act 1950</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

@@ -122,6 +122,14 @@ import {
   executeTargetedCourtListenerOnNric,
   type TargetedCourtListenerResponse,
 } from './courtListenerTargetedService.js';
+import {
+  executeAutonomousGenAiAgent,
+  executeDynamicToolCall,
+  buildGeminiToolDeclarations,
+  generateSpecializedForensicCode,
+  auditCodeIntegrity,
+  type GenAiAgentExecutionOptions,
+} from './genAiFunctionCallingService.js';
 
 // Pre-seeded authentic mock SSM registry records for testing restricted status queries
 const MOCK_ENTITIES: Record<string, SsmCompanyStatus> = {
@@ -437,6 +445,48 @@ export async function handleApiRequest(req: IncomingMessage, res: ServerResponse
   if (pathname === '/api/audit-logs' && method === 'GET') {
     const logs = getAuditLogs();
     sendJson(res, 200, { success: true, data: logs });
+    return true;
+  }
+
+  // 5b. GET /api/audit-logs/export/csv - Export audit trail as CSV for compliance reporting
+  if (pathname === '/api/audit-logs/export/csv' && method === 'GET') {
+    const logs = getAuditLogs();
+    const headers = [
+      'Log ID',
+      'Timestamp (ISO)',
+      'Timestamp (Formatted)',
+      'Agency Code',
+      'Restricted Endpoint',
+      'Query Param',
+      'HMAC Integrity',
+      'HTTP Status',
+      'Status Text',
+      'Duration (ms)',
+    ];
+    const escapeCsv = (val: string | number | boolean | null | undefined): string => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+    const rows = logs.map((log) => [
+      escapeCsv(log.id),
+      escapeCsv(log.timestamp),
+      escapeCsv(new Date(log.timestamp).toLocaleString()),
+      escapeCsv(log.agencyCode),
+      escapeCsv(log.endpoint),
+      escapeCsv(log.queryParam),
+      escapeCsv(log.hmacVerified ? 'VERIFIED' : 'FAILED'),
+      escapeCsv(log.httpStatus),
+      escapeCsv(log.statusText),
+      escapeCsv(log.durationMs),
+    ].join(','));
+    const csvContent = '\uFEFF' + [headers.map((h) => `"${h}"`).join(','), ...rows].join('\r\n');
+    res.writeHead(200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="ssm-audit-trail-${Date.now()}.csv"`,
+      'Cache-Control': 'no-cache',
+    });
+    res.end(csvContent);
     return true;
   }
 
@@ -1983,6 +2033,99 @@ SHA-256 Digest: 4d497a4ad00b3ad0516ec5a1fc83e730f1434b0ba672aff0e1c40143696ae768
       sendJson(res, 500, { success: false, error: err.message || 'Failed to serve dossier archive' });
       return true;
     }
+  }
+
+  // 86. POST /api/v1/ai/agent/autonomous - Autonomous GenAI Agent with MCP Tool Calling & Function Execution
+  if ((pathname === '/api/v1/ai/agent/autonomous' || pathname === '/api/ai/agent/autonomous') && method === 'POST') {
+    try {
+      const body = await readJsonBody<GenAiAgentExecutionOptions>(req);
+      if (!body || !body.prompt) {
+        sendJson(res, 400, { success: false, error: 'Prompt is mandatory for autonomous agent execution' });
+        return true;
+      }
+      const result = await executeAutonomousGenAiAgent(body);
+      sendJson(res, 200, { success: true, data: result });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: err.message || 'Autonomous agent execution failed' });
+    }
+    return true;
+  }
+
+  // 87. POST /api/v1/mcp/tool/call - Direct execution of any MCP or AI code tool
+  if ((pathname === '/api/v1/mcp/tool/call' || pathname === '/api/mcp/tool/call') && method === 'POST') {
+    try {
+      const body = await readJsonBody<{ tool: string; args?: Record<string, any> }>(req);
+      if (!body || !body.tool) {
+        sendJson(res, 400, { success: false, error: 'Tool name is required' });
+        return true;
+      }
+      const tStart = Date.now();
+      const toolResult = await executeDynamicToolCall(body.tool, body.args || {});
+      const latencyMs = Date.now() - tStart;
+      sendJson(res, 200, {
+        success: true,
+        tool: body.tool,
+        args: body.args || {},
+        latencyMs,
+        data: toolResult,
+      });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: err.message || 'Tool execution error' });
+    }
+    return true;
+  }
+
+  // 88. GET /api/v1/mcp/tools/declarations - Gemini FunctionDeclarations for all MCP Tools
+  if ((pathname === '/api/v1/mcp/tools/declarations' || pathname === '/api/mcp/tools/declarations') && method === 'GET') {
+    const categoryFilter = url.searchParams.get('category')?.split(',') || undefined;
+    const declarations = buildGeminiToolDeclarations(categoryFilter);
+    sendJson(res, 200, {
+      success: true,
+      totalDeclarations: declarations.length,
+      declarations,
+    });
+    return true;
+  }
+
+  // 89. POST /api/v1/ai/code/generate - Specialized Forensic & Statutory Code Generator
+  if ((pathname === '/api/v1/ai/code/generate' || pathname === '/api/ai/code/generate') && method === 'POST') {
+    try {
+      const body = await readJsonBody<{ purpose: string; targetEntity?: string; includeSha256?: boolean }>(req);
+      const purpose = body?.purpose || 's90a_cert_generator';
+      const targetEntity = body?.targetEntity || 'Kavinath Holdings Sdn. Bhd.';
+      const includeSha256 = body?.includeSha256 ?? true;
+      const code = generateSpecializedForensicCode(purpose, targetEntity, includeSha256);
+      sendJson(res, 200, {
+        success: true,
+        data: {
+          purpose,
+          targetEntity,
+          language: 'typescript',
+          code,
+          timestamp: new Date().toISOString(),
+        },
+      });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: err.message || 'Code generation failed' });
+    }
+    return true;
+  }
+
+  // 90. POST /api/v1/ai/code/validate - Code Integrity & Static Compliance Auditor
+  if ((pathname === '/api/v1/ai/code/validate' || pathname === '/api/ai/code/validate') && method === 'POST') {
+    try {
+      const body = await readJsonBody<{ code: string; statutoryRequirement?: string }>(req);
+      if (!body || !body.code) {
+        sendJson(res, 400, { success: false, error: 'Code content is required for validation' });
+        return true;
+      }
+      const statute = body.statutoryRequirement || 'Evidence Act 1950 Section 90A';
+      const auditResult = auditCodeIntegrity(body.code, statute);
+      sendJson(res, 200, { success: true, data: auditResult });
+    } catch (err: any) {
+      sendJson(res, 500, { success: false, error: err.message || 'Code validation failed' });
+    }
+    return true;
   }
 
   return false;
