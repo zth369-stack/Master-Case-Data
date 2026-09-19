@@ -23,6 +23,7 @@ export const IcijReconciliationView: React.FC = () => {
   const [limit, setLimit] = useState<number>(5);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [results, setResults] = useState<any>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Batch reconciliation state
@@ -48,12 +49,13 @@ export const IcijReconciliationView: React.FC = () => {
       const json = await res.json();
       if (json.success) {
         setResults(json.data);
+        setErrorMessage(null);
       } else {
-        alert(json.error || 'Reconciliation failed');
+        setErrorMessage(json.error || 'Reconciliation failed');
       }
     } catch (err) {
       console.error('ICIJ Reconcile Error:', err);
-      alert('Failed to connect to ICIJ Reconcile proxy');
+      setErrorMessage('Failed to connect to ICIJ Reconcile proxy');
     } finally {
       setIsLoading(false);
     }
@@ -138,6 +140,14 @@ export const IcijReconciliationView: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Error Notice */}
+      {errorMessage && (
+        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+          <span>{errorMessage}</span>
+          <button onClick={() => setErrorMessage(null)} className="text-slate-400 hover:text-white text-xs">✕</button>
+        </div>
+      )}
 
       {/* Main Single-Entity Reconcile Section */}
       <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-5 space-y-4 shadow-xl">

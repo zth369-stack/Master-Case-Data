@@ -132,6 +132,7 @@ export const McpGatewayView: React.FC<McpGatewayViewProps> = ({
   const [restResult, setRestResult] = useState<any>(null);
   const [executionTiming, setExecutionTiming] = useState<{ mcpMs?: number; restMs?: number } | null>(null);
   const [activeConfigTab, setActiveConfigTab] = useState<'claude' | 'cursor' | 'gemini' | 'cli'>('claude');
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'https://ais-dev-zxw7jvofy7kgpy36jawqij-21151088915.asia-east1.run.app';
 
@@ -152,8 +153,9 @@ export const McpGatewayView: React.FC<McpGatewayViewProps> = ({
     let parsedArgs: Record<string, unknown> = {};
     try {
       parsedArgs = JSON.parse(jsonArgs);
+      setParseError(null);
     } catch {
-      alert('Invalid JSON in arguments field');
+      setParseError('Invalid JSON format in arguments field.');
       setIsExecuting(false);
       return;
     }
@@ -594,10 +596,16 @@ curl -X POST ${currentOrigin}/mcp \\
               <textarea
                 rows={5}
                 value={jsonArgs}
-                onChange={(e) => setJsonArgs(e.target.value)}
+                onChange={(e) => {
+                  setJsonArgs(e.target.value);
+                  if (parseError) setParseError(null);
+                }}
                 className="w-full px-3 py-2 text-xs font-mono rounded-lg bg-slate-950 border border-slate-800 text-slate-200 focus:outline-none focus:border-blue-500 leading-relaxed"
                 spellCheck={false}
               />
+              {parseError && (
+                <p className="text-xs text-rose-400 mt-1 font-semibold">⚠ {parseError}</p>
+              )}
             </div>
 
             {/* Action Button */}

@@ -39,15 +39,29 @@ export function DataRetrievalTechnicalWindow({ isOpen, onClose }: DataRetrievalT
     setTimeout(() => setCopiedSnippet(null), 2500);
   };
 
-  // Function to open the complete specification in a truly separate browser window
-  const openInSeparateWindow = () => {
-    const popout = window.open('', '_blank', 'width=1200,height=850,menubar=no,toolbar=no,location=no,status=no');
-    if (!popout) {
-      alert('Pop-up was blocked. Please allow pop-ups for this site to open the specification in a separate window.');
-      return;
-    }
+  const [downloadSuccessNotice, setDownloadSuccessNotice] = useState<string | null>(null);
 
-    const htmlContent = `<!DOCTYPE html>
+  // Function to export or open the complete specification cleanly
+  const openOrExportSpecification = () => {
+    try {
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'Forensic-Data-Retrieval-Architecture-Spec.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setDownloadSuccessNotice('Specification downloaded as standalone HTML.');
+      setTimeout(() => setDownloadSuccessNotice(null), 3000);
+    } catch {
+      setDownloadSuccessNotice('Export unavailable in this environment.');
+      setTimeout(() => setDownloadSuccessNotice(null), 3000);
+    }
+  };
+
+  const htmlContent = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -423,9 +437,7 @@ SWIFT MT103 Single Customer Credit Transfer Tag Matrix:
 </body>
 </html>`;
 
-    popout.document.open();
-    popout.document.write(htmlContent);
-    popout.document.close();
+    // Document compiled safely
   };
 
   return (
@@ -450,17 +462,22 @@ SWIFT MT103 Single Customer Credit Transfer Tag Matrix:
               <p className="text-xs text-slate-400">
                 Technical methods, cryptographic proofs, HMAC protocols, network pipelines & judicial admissibility
               </p>
+              {downloadSuccessNotice && (
+                <p className="text-xs text-emerald-400 font-semibold mt-1">
+                  ✓ {downloadSuccessNotice}
+                </p>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
             <button
-              onClick={openInSeparateWindow}
+              onClick={openOrExportSpecification}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow transition"
-              title="Open the complete specification in a separate dedicated browser window"
+              title="Download standalone HTML specification"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              Open in Separate Window
+              Export HTML Spec
             </button>
             <button
               onClick={onClose}

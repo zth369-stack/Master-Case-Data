@@ -503,7 +503,6 @@ export function RealExtractsGatewayView() {
 
   // Delete document
   const handleDeleteDoc = async (id: string) => {
-    if (!confirm('Are you sure you want to remove this document from the court evidence schedule?')) return;
     try {
       const res = await fetch(`/api/real-extracts/dossier/${id}`, { method: 'DELETE' });
       if (res.ok) {

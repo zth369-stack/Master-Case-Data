@@ -143,7 +143,12 @@ export function PdfCompilerPanel({ thesis, onRefreshThesis }: PdfCompilerPanelPr
   };
 
   const handleDownloadMarkdown = () => {
-    window.open('/api/thesis/download-markdown', '_blank');
+    const a = document.createElement('a');
+    a.href = '/api/thesis/download-markdown';
+    a.download = 'supreme-forensic-master-dossier.md';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleCopyHash = (hash: string) => {

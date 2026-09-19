@@ -152,6 +152,7 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
   const [dossierAttached, setDossierAttached] = useState<string | null>(null);
   const [isAttaching, setIsAttaching] = useState(false);
   const [tokenCount, setTokenCount] = useState(0);
+  const [consoleError, setConsoleError] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const outputBoxRef = useRef<HTMLDivElement | null>(null);
@@ -233,11 +234,12 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
       const data = await res.json();
       if (data.success && data.data) {
         setAgentResponse(data.data);
+        setConsoleError(null);
       } else {
-        alert(`Autonomous agent error: ${data.error || 'Unknown error'}`);
+        setConsoleError(`Autonomous agent error: ${data.error || 'Unknown error'}`);
       }
     } catch (err: any) {
-      alert(`Network error: ${err.message}`);
+      setConsoleError(`Network error: ${err.message}`);
     } finally {
       setIsAgentExecuting(false);
     }
@@ -342,9 +344,12 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
       const data = await res.json();
       if (data.success) {
         setDossierAttached(data.data?.document?.serialOrRegistrationNo || 'SEALED & ATTACHED');
+        setConsoleError(null);
+      } else {
+        setConsoleError(`Failed to attach: ${data.error || 'Unknown error'}`);
       }
     } catch (err: any) {
-      alert(`Failed to attach to dossier: ${err.message}`);
+      setConsoleError(`Failed to attach to dossier: ${err.message}`);
     } finally {
       setIsAttaching(false);
     }
@@ -354,6 +359,12 @@ export const EnterpriseGenAiMcpConsole: React.FC = () => {
     <div className="space-y-6">
       {/* Top Banner & Mode Navigation Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm">
+        {consoleError && (
+          <div className="mb-4 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+            <span>⚠ {consoleError}</span>
+            <button onClick={() => setConsoleError(null)} className="text-slate-400 hover:text-white text-xs">✕</button>
+          </div>
+        )}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-800 pb-5">
           <div className="flex items-center gap-3">
             <div className="p-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
